@@ -83,9 +83,23 @@ async function backendLogin(
       // SSR fetch — don't cache an auth response.
       cache: "no-store",
     });
-    if (!res.ok) return null;
-    return (await res.json()) as BackendLoginResponse;
-  } catch {
+    if (!res.ok) {
+      // eslint-disable-next-line no-console
+      console.error("[auth] backendLogin non-OK", res.status, await res.text().catch(() => ""));
+      return null;
+    }
+    const raw = (await res.json()) as any;
+    // Backend wraps responses in {data, meta, traceId, requestId}
+    const payload = (raw?.data ?? raw) as BackendLoginResponse;
+    if (!payload?.token) {
+      // eslint-disable-next-line no-console
+      console.error("[auth] backendLogin missing token in payload");
+      return null;
+    }
+    return payload;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[auth] backendLogin threw", e);
     return null;
   }
 }
@@ -103,7 +117,9 @@ async function refreshBackendToken(refreshToken: string): Promise<{
       cache: "no-store",
     });
     if (!res.ok) return null;
-    return (await res.json()) as { token: string; refreshToken?: string; expiresIn?: number };
+    const raw = (await res.json()) as any;
+    const payload = (raw?.data ?? raw) as { token: string; refreshToken?: string; expiresIn?: number };
+    return payload?.token ? payload : null;
   } catch {
     return null;
   }
