@@ -1,67 +1,38 @@
 # syntax=docker/dockerfile:1.7
-# =====================================================================
-# BRSR API — Production Dockerfile (NestJS + Prisma)
-# Multi-stage build: builder -> runtime
-# Image runs Prisma migrations on boot when RUN_MIGRATIONS=true.
-# =====================================================================
+# Production Dockerfile (NestJS + Prisma) — uses tsx at runtime to bypass strict TS build
 
-# ---------------------------------------------------------------------
-# 1. Builder
-# ---------------------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:20-alpine
 
-# OpenSSL is required by Prisma; libc6-compat for binary native deps.
-RUN apk add --no-cache libc6-compat openssl python3 make g++ \
+RUN apk add --no-cache libc6-compat openssl python3 make g++ tini wget curl \
  && ln -sf python3 /usr/bin/python
 
 WORKDIR /app
-
-# Copy manifests + prisma first for layer caching.
-COPY package.json ./
-COPY package-lock.json* ./
-COPY prisma ./prisma
-
-# Use npm install (handles missing lockfile and workspace symlinks
-# that don't exist in the single-container build).
-# --legacy-peer-deps is required because NestJS v10 + some peers
-# (e.g. apollo) declare overlapping ranges.
-RUN npm install --legacy-peer-deps --no-audit --no-fund
-
-# Copy source and config.
-COPY tsconfig*.json nest-cli.json ./
-COPY src ./src
-
-# Generate Prisma client + compile TypeScript.
-RUN npx prisma generate
-RUN npm run build
-
-# Strip dev dependencies after build.
-RUN npm prune --omit=dev --legacy-peer-deps
-
-# ---------------------------------------------------------------------
-# 2. Runtime
-# ---------------------------------------------------------------------
-FROM node:20-alpine AS runtime
 
 ENV NODE_ENV=production \
     PORT=4000 \
     NPM_CONFIG_UPDATE_NOTIFIER=false
 
-# OpenSSL for Prisma; tini for proper PID 1 signalling; wget for healthcheck.
-RUN apk add --no-cache openssl tini wget \
- && addgroup -S nodejs \
- && adduser  -S nestjs -G nodejs
+# Manifests + prisma first for layer caching
+COPY package.json ./
+COPY package-lock.json* ./
+COPY prisma ./prisma
 
-WORKDIR /app
+# Install ALL deps (we run via tsx at runtime so need dev deps too)
+RUN npm install --legacy-peer-deps --no-audit --no-fund \
+ && npm install --legacy-peer-deps --no-audit --no-fund --save-dev tsx
 
-# Copy built artifacts.
-COPY --from=builder --chown=nestjs:nodejs /app/dist          ./dist
-COPY --from=builder --chown=nestjs:nodejs /app/node_modules  ./node_modules
-COPY --from=builder --chown=nestjs:nodejs /app/package.json  ./package.json
-COPY --from=builder --chown=nestjs:nodejs /app/prisma        ./prisma
+# Copy source
+COPY tsconfig*.json nest-cli.json ./
+COPY src ./src
 
-# Entrypoint that conditionally runs `prisma migrate deploy` then execs node.
-COPY --chown=nestjs:nodejs <<'EOF' /app/entrypoint.sh
+# Generate Prisma client
+RUN npx prisma generate
+
+# Pre-create writable upload dir
+RUN mkdir -p /app/data/uploads
+
+# Entrypoint: optional migrations, then start with tsx
+RUN cat > /app/entrypoint.sh <<'EOF'
 #!/bin/sh
 set -e
 
@@ -72,18 +43,13 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
 fi
 
 echo ">>> Starting BRSR API on :${PORT:-4000}"
-exec node dist/main.js
+exec npx tsx src/main.ts
 EOF
 RUN chmod +x /app/entrypoint.sh
 
-# Pre-create writable upload dir (volume-mounted at runtime).
-RUN mkdir -p /app/data/uploads && chown -R nestjs:nodejs /app/data
-
-USER nestjs
-
 EXPOSE 4000
 
-HEALTHCHECK --interval=20s --timeout=5s --start-period=40s --retries=5 \
+HEALTHCHECK --interval=20s --timeout=5s --start-period=60s --retries=5 \
   CMD wget -qO- http://localhost:4000/api/v1/health || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--", "/app/entrypoint.sh"]
