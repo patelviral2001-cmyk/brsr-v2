@@ -93,25 +93,55 @@ export class FilesService {
     // Compute a stable content hash for deduplication.
     const sha256 = createHash('sha256').update(file.buffer).digest('hex');
 
-    // Validate docType against DocType enum, else fall back to GENERIC.
+    // Validate docType against DocType enum, else fall back to OTHER.
     const docType = normalizeDocType(dto.docType);
 
-    const doc = await (this.prisma as any).document.create({
-      data: {
-        tenantId,
-        scopeNodeId,
-        uploadedBy: actorId,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        sizeBytes: file.size,
-        sha256,
-        s3Bucket: bucket,
-        s3Key,
-        docType,
-        status: 'PENDING',
-        tags: dto.tags?.split(',').map((t) => t.trim()).filter(Boolean) ?? [],
-      },
+    // Idempotent upload: if the same content was already uploaded for this
+    // tenant, return the existing record instead of failing with a unique-
+    // constraint error.
+    const existing = await (this.prisma as any).document.findUnique({
+      where: { tenantId_sha256: { tenantId, sha256 } },
     });
+    if (existing) {
+      this.logger.log(
+        `Duplicate upload detected for ${file.originalname} (sha256=${sha256.slice(0, 8)}…); returning existing doc ${existing.id}`,
+      );
+      existing.sizeBytes = typeof existing.sizeBytes === 'bigint' ? Number(existing.sizeBytes) : existing.sizeBytes;
+      return existing;
+    }
+
+    let doc: any;
+    try {
+      doc = await (this.prisma as any).document.create({
+        data: {
+          tenantId,
+          scopeNodeId,
+          uploadedBy: actorId,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          sizeBytes: file.size,
+          sha256,
+          s3Bucket: bucket,
+          s3Key,
+          docType,
+          status: 'PENDING',
+          tags: dto.tags?.split(',').map((t) => t.trim()).filter(Boolean) ?? [],
+        },
+      });
+    } catch (e: any) {
+      // Race condition: another concurrent request inserted between our
+      // findUnique and create. Fetch and return the now-existing record.
+      if (e?.code === 'P2002') {
+        const dup = await (this.prisma as any).document.findUnique({
+          where: { tenantId_sha256: { tenantId, sha256 } },
+        });
+        if (dup) {
+          dup.sizeBytes = typeof dup.sizeBytes === 'bigint' ? Number(dup.sizeBytes) : dup.sizeBytes;
+          return dup;
+        }
+      }
+      throw e;
+    }
     // Coerce BigInt fields so JSON serialization doesn't fail.
     doc.sizeBytes = typeof doc.sizeBytes === 'bigint' ? Number(doc.sizeBytes) : doc.sizeBytes;
 
