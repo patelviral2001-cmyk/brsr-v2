@@ -2,6 +2,12 @@ import 'reflect-metadata';
 import { initTracing } from './tracing';
 initTracing();
 
+// JSON.stringify default doesn't know how to handle BigInt — coerce to Number.
+// Prisma BigInt columns (e.g. sizeBytes) would otherwise crash serialization.
+(BigInt.prototype as unknown as { toJSON: () => number }).toJSON = function () {
+  return Number(this);
+};
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';

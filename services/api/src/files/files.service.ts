@@ -112,6 +112,8 @@ export class FilesService {
         tags: dto.tags?.split(',').map((t) => t.trim()).filter(Boolean) ?? [],
       },
     });
+    // Coerce BigInt fields so JSON serialization doesn't fail.
+    doc.sizeBytes = typeof doc.sizeBytes === 'bigint' ? Number(doc.sizeBytes) : doc.sizeBytes;
 
     // Fire-and-forget dispatch to AI engine.
     void this.dispatchExtraction(doc.id, tenantId, s3Key, dto.docType);
