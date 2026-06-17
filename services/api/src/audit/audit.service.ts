@@ -25,23 +25,35 @@ export class AuditService {
 
   async log(input: AuditLogInput): Promise<void> {
     try {
+      // Map our action verb to the AuditActionType enum.
+      const actionEnum = (input.action || 'UPDATE').toUpperCase();
+      const validActions = new Set([
+        'CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'REJECT',
+        'LOCK', 'UNLOCK', 'EXPORT', 'LOGIN', 'IMPERSONATE',
+        'SIGN', 'EXTRACT', 'OVERRIDE',
+      ]);
+      const action = validActions.has(actionEnum) ? actionEnum : 'UPDATE';
+
       await (this.prisma as any).auditLog.create({
         data: {
           tenantId: input.tenantId,
-          userId: input.userId,
-          entity: input.entity,
-          entityId: input.entityId,
-          action: input.action,
-          before: input.before ?? null,
-          after: input.after ?? null,
-          requestId: input.requestId,
-          ip: input.ip,
+          actorUserId: input.userId ?? null,
+          entityType: input.entity,
+          entityId: input.entityId ?? '',
+          action,
+          diff: {
+            before: input.before ?? null,
+            after: input.after ?? null,
+            metadata: input.metadata ?? {},
+          },
+          ipAddress: input.ip,
           userAgent: input.userAgent,
-          metadata: input.metadata ?? {},
+          requestId: input.requestId,
         },
       });
     } catch (e) {
-      this.logger.error(`Failed to write audit log: ${(e as Error).message}`);
+      // Audit logging is best-effort — never block the user request.
+      this.logger.warn(`Audit log skipped: ${(e as Error).message}`);
     }
   }
 
