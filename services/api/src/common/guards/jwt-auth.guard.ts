@@ -37,17 +37,23 @@ export class JwtAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly config: ConfigService,
   ) {
-    this.issuer =
-      this.config.get<string>('JWT_ISSUER') ??
-      `${this.config.get<string>('KEYCLOAK_URL')}/realms/${this.config.get<string>('KEYCLOAK_REALM')}`;
-    this.audience = this.config.get<string>('JWT_AUDIENCE') ?? undefined;
-    this.jwks = jwksClient({
-      jwksUri: `${this.issuer}/protocol/openid-connect/certs`,
-      cache: true,
-      cacheMaxAge: 10 * 60 * 1000,
-      rateLimit: true,
-      jwksRequestsPerMinute: 10,
-    });
+    const cfg = this.config;
+    const kcUrl = cfg?.get<string>('KEYCLOAK_URL') ?? 'http://localhost:8080';
+    const kcRealm = cfg?.get<string>('KEYCLOAK_REALM') ?? 'brsr';
+    this.issuer = cfg?.get<string>('JWT_ISSUER') ?? `${kcUrl}/realms/${kcRealm}`;
+    this.audience = cfg?.get<string>('JWT_AUDIENCE') ?? undefined;
+    try {
+      this.jwks = jwksClient({
+        jwksUri: `${this.issuer}/protocol/openid-connect/certs`,
+        cache: true,
+        cacheMaxAge: 10 * 60 * 1000,
+        rateLimit: true,
+        jwksRequestsPerMinute: 10,
+      });
+    } catch (e) {
+      this.logger.warn(`JWKS client init failed; JWT validation disabled: ${e}`);
+      this.jwks = null as any;
+    }
   }
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
