@@ -140,12 +140,11 @@ export class FilesService {
     return (this.prisma as any).document.findMany({
       where: {
         tenantId,
-        docType: q.docType,
-        status: q.status,
-        scopeNodeId: q.scopeNodeId,
-        deletedAt: null,
+        ...(q.docType ? { docType: q.docType } : {}),
+        ...(q.status ? { status: q.status } : {}),
+        ...(q.scopeNodeId ? { scopeNodeId: q.scopeNodeId } : {}),
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { uploadedAt: 'desc' },
       take: q.take ?? 50,
       skip: q.skip ?? 0,
     });
@@ -153,7 +152,7 @@ export class FilesService {
 
   async findOne(tenantId: string, id: string) {
     const doc = await (this.prisma as any).document.findFirst({
-      where: { id, tenantId, deletedAt: null },
+      where: { id, tenantId },
       include: { extractionFields: true },
     });
     if (!doc) throw new NotFoundException('Document not found');
@@ -162,9 +161,10 @@ export class FilesService {
 
   async softDelete(tenantId: string, id: string, actorId: string) {
     const doc = await this.findOne(tenantId, id);
+    // Document model has no `deletedAt` — just flip status.
     await (this.prisma as any).document.update({
       where: { id },
-      data: { deletedAt: new Date(), status: 'DELETED' },
+      data: { status: 'REJECTED' },
     });
     await this.audit.log({
       tenantId,
