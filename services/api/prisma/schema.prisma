@@ -437,6 +437,7 @@ model User {
   tenantId     String    @map("tenant_id")
   idpSubject   String    @unique @map("idp_subject")
   email        String
+  passwordHash String?   @map("password_hash")
   firstName    String?   @map("first_name")
   lastName     String?   @map("last_name")
   locale       String    @default("en-IN")

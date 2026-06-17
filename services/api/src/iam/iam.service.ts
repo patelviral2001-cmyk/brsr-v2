@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import * as jwt from 'jsonwebtoken';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { KeycloakClient } from '../common/utils/keycloak-client';
 import { AuditService } from '../audit/audit.service';
@@ -83,6 +84,91 @@ export class IamService {
       tokens,
       user: { id: user.id, email: user.email, tenantId: user.tenantId },
     };
+  }
+
+  /**
+   * Credentials-based login. Validates email+password, returns signed JWT.
+   * Used by the Next.js frontend's NextAuth Credentials provider.
+   */
+  async loginWithCredentials(email: string, password: string, ip?: string, userAgent?: string) {
+    if (!email || !password) throw new BadRequestException('email and password required');
+
+    const user = await (this.prisma as any).user.findFirst({
+      where: { email, isActive: true },
+      include: { tenant: true },
+    });
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    const passwordHash = (user as any).passwordHash as string | null;
+    if (!passwordHash) throw new UnauthorizedException('Credentials login not enabled for this user');
+
+    const ok = await bcrypt.compare(password, passwordHash);
+    if (!ok) throw new UnauthorizedException('Invalid credentials');
+
+    const secret = this.config.get<string>('JWT_SECRET') ?? 'dev-secret';
+    const accessToken = jwt.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        tenant_id: user.tenantId,
+      },
+      secret,
+      { expiresIn: '1d', issuer: 'brsr-api' },
+    );
+    const refreshToken = jwt.sign(
+      { sub: user.id, type: 'refresh' },
+      secret,
+      { expiresIn: '7d', issuer: 'brsr-api' },
+    );
+
+    await (this.prisma as any).user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    try {
+      await this.audit.log({
+        tenantId: user.tenantId,
+        userId: user.id,
+        entity: 'User',
+        entityId: user.id,
+        action: 'login',
+        ip,
+        userAgent,
+      });
+    } catch (e) {
+      this.logger.warn(`Audit log failed: ${e}`);
+    }
+
+    return {
+      token: accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        tenantId: user.tenantId,
+      },
+    };
+  }
+
+  async refreshToken(refreshToken: string) {
+    const secret = this.config.get<string>('JWT_SECRET') ?? 'dev-secret';
+    try {
+      const decoded = jwt.verify(refreshToken, secret) as any;
+      if (decoded.type !== 'refresh') throw new UnauthorizedException('Invalid refresh token');
+      const user = await (this.prisma as any).user.findUnique({ where: { id: decoded.sub } });
+      if (!user || !user.isActive) throw new UnauthorizedException('User not found or inactive');
+      const accessToken = jwt.sign(
+        { sub: user.id, email: user.email, tenant_id: user.tenantId },
+        secret,
+        { expiresIn: '1d', issuer: 'brsr-api' },
+      );
+      return { token: accessToken };
+    } catch (e) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
   }
 
   async me(userId: string) {

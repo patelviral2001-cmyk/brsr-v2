@@ -40,6 +40,20 @@ export class IamController {
     return this.iam.exchangeCode(dto, req.ip, req.headers['user-agent']);
   }
 
+  @Public()
+  @Post('auth/login')
+  @ApiOperation({ summary: 'Credentials login — returns JWT for the matched user' })
+  login(@Body() body: { email: string; password: string }, @Req() req: Request) {
+    return this.iam.loginWithCredentials(body.email, body.password, req.ip, req.headers['user-agent']);
+  }
+
+  @Public()
+  @Post('auth/refresh')
+  @ApiOperation({ summary: 'Refresh access token' })
+  refresh(@Body() body: { refreshToken: string }) {
+    return this.iam.refreshToken(body.refreshToken);
+  }
+
   @Get('me')
   @ApiOperation({ summary: 'Current user with roles + scopes' })
   me(@CurrentUser() user: AuthenticatedUser) {
