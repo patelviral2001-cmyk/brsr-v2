@@ -21,9 +21,12 @@ export default function MetricsPage() {
   const [fw, setFw] = useState("all");
 
   const filtered = useMemo(() => {
-    return (registry ?? []).filter((m) => {
-      if (fw !== "all" && !m.frameworks.some((f) => f.id === fw)) return false;
-      if (q && !`${m.name} ${m.canonicalKey} ${m.category}`.toLowerCase().includes(q.toLowerCase())) return false;
+    const list = Array.isArray(registry) ? registry : [];
+    return list.filter((m) => {
+      const frameworks = Array.isArray(m?.frameworks) ? m.frameworks : [];
+      if (fw !== "all" && !frameworks.some((f) => f?.id === fw)) return false;
+      const haystack = `${m?.name ?? ""} ${m?.canonicalKey ?? ""} ${m?.category ?? ""}`.toLowerCase();
+      if (q && !haystack.includes(q.toLowerCase())) return false;
       return true;
     });
   }, [registry, q, fw]);
@@ -31,9 +34,10 @@ export default function MetricsPage() {
   const grouped = useMemo(() => {
     const map = new Map<string, typeof filtered>();
     filtered.forEach((m) => {
-      const arr = map.get(m.category) ?? [];
+      const cat = m?.category ?? "Uncategorized";
+      const arr = map.get(cat) ?? [];
       arr.push(m);
-      map.set(m.category, arr);
+      map.set(cat, arr);
     });
     return Array.from(map.entries());
   }, [filtered]);
@@ -48,8 +52,8 @@ export default function MetricsPage() {
 
       <Tabs defaultValue="registry">
         <TabsList>
-          <TabsTrigger value="registry">Registry <Badge variant="ghost" size="sm" className="ml-1.5">{registry?.length ?? 0}</Badge></TabsTrigger>
-          <TabsTrigger value="events">Events <Badge variant="ghost" size="sm" className="ml-1.5">{events?.length ?? 0}</Badge></TabsTrigger>
+          <TabsTrigger value="registry">Registry <Badge variant="ghost" size="sm" className="ml-1.5">{Array.isArray(registry) ? registry.length : 0}</Badge></TabsTrigger>
+          <TabsTrigger value="events">Events <Badge variant="ghost" size="sm" className="ml-1.5">{Array.isArray(events) ? events.length : 0}</Badge></TabsTrigger>
         </TabsList>
 
         <TabsContent value="registry">
@@ -65,7 +69,7 @@ export default function MetricsPage() {
                 {FRAMEWORKS.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Badge variant="ghost" className="ml-auto">{filtered.length} of {registry?.length ?? 0}</Badge>
+            <Badge variant="ghost" className="ml-auto">{filtered.length} of {Array.isArray(registry) ? registry.length : 0}</Badge>
           </div>
           <div className="space-y-6">
             {grouped.map(([cat, metrics]) => (
@@ -82,7 +86,7 @@ export default function MetricsPage() {
         <TabsContent value="events">
           <Card>
             <CardContent className="p-0">
-              {events && <MetricEventTable events={events} />}
+              {Array.isArray(events) && <MetricEventTable events={events} />}
             </CardContent>
           </Card>
         </TabsContent>

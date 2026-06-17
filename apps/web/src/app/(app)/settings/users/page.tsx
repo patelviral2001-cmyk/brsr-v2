@@ -24,7 +24,7 @@ export default function UsersSettingsPage() {
         </div>
       </div>
     )},
-    { key: "roles", header: "Roles", cell: (r) => <div className="flex flex-wrap gap-1">{r.roles.map((ro) => <Badge key={ro} size="sm" variant="primary">{ro}</Badge>)}</div> },
+    { key: "roles", header: "Roles", cell: (r) => <div className="flex flex-wrap gap-1">{(Array.isArray(r.roles) ? r.roles : []).map((ro) => <Badge key={ro} size="sm" variant="primary">{ro}</Badge>)}</div> },
     { key: "mfaEnabled", header: "MFA", cell: (r) => r.mfaEnabled ? <Badge variant="success" size="sm"><ShieldCheck className="h-3 w-3" /> On</Badge> : <Badge variant="outline" size="sm">Off</Badge> },
     { key: "status", header: "Status", cell: (r) => <Badge variant={r.status === "ACTIVE" ? "success" : r.status === "INVITED" ? "info" : "outline"} size="sm">{r.status}</Badge> },
     { key: "lastLoginAt", header: "Last login", cell: (r) => <span className="text-xs text-slate-500">{r.lastLoginAt ? formatRelative(r.lastLoginAt) : "—"}</span> },
@@ -33,7 +33,7 @@ export default function UsersSettingsPage() {
     <div className="p-6 space-y-5">
       <PageHeader title="Users" description="Manage workspace members" actions={<Button size="sm"><Plus className="h-4 w-4" />Invite</Button>} />
       <Card>
-        <CardContent className="p-0">{users && <DataTable data={users} columns={cols} rowKey={(r) => r.id} dense />}</CardContent>
+        <CardContent className="p-0">{Array.isArray(users) && <DataTable data={users} columns={cols} rowKey={(r) => r.id} dense />}</CardContent>
       </Card>
     </div>
   );

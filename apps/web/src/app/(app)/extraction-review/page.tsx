@@ -37,12 +37,13 @@ export default function ExtractionReviewPage() {
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof queue>();
-    (queue ?? [])
-      .filter((f) => !q || f.fieldLabel.toLowerCase().includes(q.toLowerCase()))
+    (Array.isArray(queue) ? queue : [])
+      .filter((f) => !q || (f.fieldLabel ?? "").toLowerCase().includes(q.toLowerCase()))
       .forEach((f) => {
-        const arr = map.get(f.fileName) ?? [];
+        const key = f.fileName ?? "Unknown file";
+        const arr = map.get(key) ?? [];
         arr.push(f);
-        map.set(f.fileName, arr);
+        map.set(key, arr);
       });
     return Array.from(map.entries());
   }, [queue, q]);

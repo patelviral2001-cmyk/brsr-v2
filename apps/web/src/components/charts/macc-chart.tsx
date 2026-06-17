@@ -12,11 +12,13 @@ const CATEGORY_COLOR: Record<AbatementProject["category"], string> = {
 };
 
 export function MaccChart({ projects, height = 380 }: { projects: AbatementProject[]; height?: number }) {
+  const safeProjects = Array.isArray(projects) ? projects : [];
   // Sort ascending by marginal cost
-  const sorted = useMemo(() => [...projects].sort((a, b) => a.marginalCostINRPerTCO2e - b.marginalCostINRPerTCO2e), [projects]);
-  const totalReduction = sorted.reduce((a, b) => a + b.reductionTCO2e, 0);
-  const maxCost = Math.max(...sorted.map((p) => p.marginalCostINRPerTCO2e), 100);
-  const minCost = Math.min(...sorted.map((p) => p.marginalCostINRPerTCO2e), -2000);
+  const sorted = useMemo(() => [...safeProjects].sort((a, b) => (a.marginalCostINRPerTCO2e ?? 0) - (b.marginalCostINRPerTCO2e ?? 0)), [safeProjects]);
+  const totalReductionRaw = sorted.reduce((a, b) => a + (b.reductionTCO2e ?? 0), 0);
+  const totalReduction = totalReductionRaw === 0 ? 1 : totalReductionRaw;
+  const maxCost = Math.max(...sorted.map((p) => p.marginalCostINRPerTCO2e ?? 0), 100);
+  const minCost = Math.min(...sorted.map((p) => p.marginalCostINRPerTCO2e ?? 0), -2000);
   const padding = { top: 24, right: 18, bottom: 60, left: 56 };
 
   return (
@@ -52,15 +54,17 @@ export function MaccChart({ projects, height = 380 }: { projects: AbatementProje
               <text x={padding.left - 8} y={padding.top + h + 20} textAnchor="end" fontSize="10" fill="#64748b" fontWeight={600}>tCO2e →</text>
               <text x={padding.left - 44} y={padding.top + h / 2} textAnchor="middle" fontSize="10" fill="#64748b" fontWeight={600} transform={`rotate(-90, ${padding.left - 44}, ${padding.top + h / 2})`}>₹ / tCO2e</text>
               {sorted.map((p) => {
-                const barW = (p.reductionTCO2e / totalReduction) * w;
-                const y = Math.min(yZero, yScale(p.marginalCostINRPerTCO2e));
-                const barH = Math.abs(yZero - yScale(p.marginalCostINRPerTCO2e));
+                const barW = ((p.reductionTCO2e ?? 0) / totalReduction) * w;
+                const mc = p.marginalCostINRPerTCO2e ?? 0;
+                const y = Math.min(yZero, yScale(mc));
+                const barH = Math.abs(yZero - yScale(mc));
                 const x = xCursor;
                 xCursor += barW;
+                const fill = CATEGORY_COLOR[p.category] ?? "#94a3b8";
                 return (
                   <g key={p.id}>
-                    <rect x={x} y={y} width={Math.max(0.5, barW - 1)} height={barH} fill={CATEGORY_COLOR[p.category]} opacity={p.status === "PROPOSED" ? 0.55 : 0.95}>
-                      <title>{p.name}: {p.reductionTCO2e} tCO2e at ₹{p.marginalCostINRPerTCO2e}/tCO2e</title>
+                    <rect x={x} y={y} width={Math.max(0.5, barW - 1)} height={barH} fill={fill} opacity={p.status === "PROPOSED" ? 0.55 : 0.95}>
+                      <title>{p.name}: {p.reductionTCO2e ?? 0} tCO2e at ₹{mc}/tCO2e</title>
                     </rect>
                   </g>
                 );
@@ -72,7 +76,7 @@ export function MaccChart({ projects, height = 380 }: { projects: AbatementProje
                   <g key={i}>
                     <line x1={x} x2={x} y1={padding.top + h} y2={padding.top + h + 4} stroke="#94a3b8" />
                     <text x={x} y={padding.top + h + 18} textAnchor="middle" fontSize="10" fill="#64748b">
-                      {(f * totalReduction / 1000).toFixed(1)}k
+                      {(f * totalReductionRaw / 1000).toFixed(1)}k
                     </text>
                   </g>
                 );

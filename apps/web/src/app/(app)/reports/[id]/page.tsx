@@ -21,10 +21,10 @@ export default function ReportDetailPage() {
     <div className="p-6 space-y-5">
       <PageHeader
         title={r?.name ?? "Report"}
-        description={r ? `${r.frameworks.join(" · ")} · ${r.fy} · ${r.scopeNodeName}` : "Loading…"}
+        description={r ? `${(Array.isArray(r.frameworks) ? r.frameworks : []).join(" · ")} · ${r.fy} · ${r.scopeNodeName}` : "Loading…"}
         actions={r && (
           <>
-            <Badge variant="outline" className={cn(STATUS_COLORS[r.status])}>
+            <Badge variant="outline" className={cn(STATUS_COLORS?.[r.status])}>
               {r.status === "ASSURED" && <ShieldCheck className="mr-1 h-3 w-3" />}
               {r.status}
             </Badge>
@@ -44,7 +44,7 @@ export default function ReportDetailPage() {
               <CardContent>
                 <div className="aspect-[1/1.2] w-full max-w-md rounded-xl border border-slate-200 bg-gradient-to-br from-primary-700 to-primary-950 p-8 text-white shadow-elevated">
                   <div className="flex h-full flex-col">
-                    <div className="text-[10px] uppercase tracking-widest text-primary-200">{r.frameworks.join(" · ")}</div>
+                    <div className="text-[10px] uppercase tracking-widest text-primary-200">{(Array.isArray(r.frameworks) ? r.frameworks : []).join(" · ")}</div>
                     <h1 className="mt-3 text-3xl font-bold leading-tight">{r.name}</h1>
                     <div className="mt-2 text-sm text-primary-200">{r.scopeNodeName}</div>
                     <div className="flex-1" />
@@ -64,7 +64,7 @@ export default function ReportDetailPage() {
             <Card>
               <CardHeader><CardTitle>Downloads</CardTitle></CardHeader>
               <CardContent className="space-y-2">
-                {r.formats.map((f) => (
+                {(Array.isArray(r.formats) ? r.formats : []).map((f) => (
                   <a key={f} href={r.downloadUrls?.[f] ?? "#"} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 transition-colors hover:bg-slate-50">
                     <div className="flex items-center gap-2">
                       <FormatIcons formats={[f]} />
@@ -79,7 +79,7 @@ export default function ReportDetailPage() {
               <CardHeader><CardTitle>Metadata</CardTitle></CardHeader>
               <CardContent>
                 <dl className="space-y-1.5 text-xs">
-                  <div className="flex justify-between"><dt className="text-slate-500">Size</dt><dd className="font-medium text-slate-900">{formatBytes(r.sizeBytes)}</dd></div>
+                  <div className="flex justify-between"><dt className="text-slate-500">Size</dt><dd className="font-medium text-slate-900">{formatBytes(r.sizeBytes ?? 0)}</dd></div>
                   <div className="flex justify-between"><dt className="text-slate-500">Period</dt><dd className="font-medium text-slate-900">{r.fy}</dd></div>
                   <div className="flex justify-between"><dt className="text-slate-500">Scope</dt><dd className="font-medium text-slate-900">{r.scopeNodeName}</dd></div>
                   {r.filedAt && <div className="flex justify-between"><dt className="text-slate-500">Filed</dt><dd className="font-medium text-slate-900">{formatDateTime(r.filedAt)}</dd></div>}

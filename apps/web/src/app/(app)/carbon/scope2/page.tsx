@@ -22,7 +22,7 @@ export default function Scope2Page() {
         <Switch id="market" checked={market} onCheckedChange={setMarket} />
         <Label htmlFor="market" className="text-sm">Market-based</Label>
         <Badge variant="primary" className="ml-auto">
-          {e ? formatTonnesCO2e(market ? e.scope2Market : e.scope2Location) : "—"}
+          {e ? formatTonnesCO2e((market ? e.scope2Market : e.scope2Location) ?? 0) : "—"}
         </Badge>
       </div>
 

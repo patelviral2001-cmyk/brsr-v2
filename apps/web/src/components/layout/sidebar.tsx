@@ -54,7 +54,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
 export function Sidebar() {
   const collapsed = useAppStore((s) => s.sidebarCollapsed);
   const toggle = useAppStore((s) => s.toggleSidebar);
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
 
   return (
     <TooltipProvider delayDuration={120}>

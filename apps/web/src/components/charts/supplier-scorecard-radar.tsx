@@ -21,11 +21,12 @@ export function SupplierScorecardRadar({ data, size = 220, color = "#047857" }: 
   const angleStep = (Math.PI * 2) / labels.length;
   const polar = (i: number, val: number) => {
     const angle = i * angleStep - Math.PI / 2;
-    const radius = r * (val / 100);
+    const radius = r * ((val ?? 0) / 100);
     return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius];
   };
 
-  const points = labels.map((l, i) => polar(i, (data as Record<string, number>)[l.key])).map(([x, y]) => `${x},${y}`).join(" ");
+  const dataRec = (data ?? {}) as unknown as Record<string, number>;
+  const points = labels.map((l, i) => polar(i, dataRec[l.key] ?? 0)).map(([x, y]) => `${x},${y}`).join(" ");
 
   return (
     <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full">
@@ -51,7 +52,7 @@ export function SupplierScorecardRadar({ data, size = 220, color = "#047857" }: 
       })}
       <polygon points={points} fill={color} fillOpacity={0.22} stroke={color} strokeWidth={1.8} />
       {labels.map((l, i) => {
-        const [x, y] = polar(i, (data as Record<string, number>)[l.key]);
+        const [x, y] = polar(i, dataRec[l.key] ?? 0);
         return <circle key={i} cx={x} cy={y} r={3} fill={color} stroke="#fff" strokeWidth={1.5} />;
       })}
     </svg>

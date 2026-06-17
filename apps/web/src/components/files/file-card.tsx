@@ -8,27 +8,32 @@ import { STATUS_COLORS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { FileObject } from "@/types";
 
-function getFileIcon(mime: string) {
-  if (mime.includes("spreadsheet") || mime.includes("csv")) return FileSpreadsheet;
-  if (mime.includes("pdf")) return FileText;
-  if (mime.includes("image")) return FilePieChart;
+function getFileIcon(mime: string | undefined | null) {
+  const m = mime ?? "";
+  if (m.includes("spreadsheet") || m.includes("csv")) return FileSpreadsheet;
+  if (m.includes("pdf")) return FileText;
+  if (m.includes("image")) return FilePieChart;
   return FileIcon;
 }
 
 export function FileCard({ file }: { file: FileObject }) {
   const Icon = getFileIcon(file.mimeType);
   const isProcessing = file.status === "PROCESSING";
+  const docType = file.docType ?? "UNKNOWN";
+  const docTypeLabel = docType.replace(/_/g, " ");
+  const extractedFieldCount = file.extractedFieldCount ?? 0;
+  const avgConfidence = file.avgConfidence ?? 0;
   return (
     <Link href={`/files/${file.id}`} className="group block">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft transition-all hover:border-slate-300 hover:shadow-elevated">
         <div className="flex items-start gap-3">
           <div className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
-            file.docType === "INVOICE" && "bg-emerald-50 text-emerald-700",
-            file.docType === "UTILITY_BILL" && "bg-sky-50 text-sky-700",
-            file.docType === "FUEL_RECEIPT" && "bg-amber-50 text-amber-700",
-            file.docType === "POLICY" && "bg-violet-50 text-violet-700",
-            !["INVOICE", "UTILITY_BILL", "FUEL_RECEIPT", "POLICY"].includes(file.docType) && "bg-slate-50 text-slate-700"
+            docType === "INVOICE" && "bg-emerald-50 text-emerald-700",
+            docType === "UTILITY_BILL" && "bg-sky-50 text-sky-700",
+            docType === "FUEL_RECEIPT" && "bg-amber-50 text-amber-700",
+            docType === "POLICY" && "bg-violet-50 text-violet-700",
+            !["INVOICE", "UTILITY_BILL", "FUEL_RECEIPT", "POLICY"].includes(docType) && "bg-slate-50 text-slate-700"
           )}>
             <Icon className="h-5 w-5" />
           </div>
@@ -36,26 +41,26 @@ export function FileCard({ file }: { file: FileObject }) {
             <div className="truncate text-sm font-medium text-slate-900 group-hover:text-primary-800">{file.filename}</div>
             <div className="text-xs text-slate-500">{file.scopeNodeName}</div>
           </div>
-          <Badge variant="outline" className={cn("shrink-0", STATUS_COLORS[file.status])}>
+          <Badge variant="outline" className={cn("shrink-0", file.status ? STATUS_COLORS[file.status] : "")}>
             {isProcessing && <span className="mr-1 h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
-            {file.status}
+            {file.status ?? "UNKNOWN"}
           </Badge>
         </div>
         <div className="mt-4 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2 text-slate-500">
-            <Badge variant="ghost" size="sm">{file.docType.replace("_", " ")}</Badge>
+            <Badge variant="ghost" size="sm">{docTypeLabel}</Badge>
             <span>·</span>
-            <span>{formatBytes(file.sizeBytes)}</span>
+            <span>{formatBytes(file.sizeBytes ?? 0)}</span>
           </div>
-          {file.extractedFieldCount > 0 && (
+          {extractedFieldCount > 0 && (
             <div className="flex items-center gap-1.5">
-              <ConfidenceRing pct={file.avgConfidence} />
-              <span className="text-slate-500">{file.extractedFieldCount} fields</span>
+              <ConfidenceRing pct={avgConfidence} />
+              <span className="text-slate-500">{extractedFieldCount} fields</span>
             </div>
           )}
         </div>
         <div className="mt-3 text-[10px] text-slate-400">
-          Uploaded {formatRelative(file.uploadedAt)} by {file.uploadedBy}
+          Uploaded {formatRelative(file.uploadedAt)} by {file.uploadedBy ?? "unknown"}
         </div>
       </div>
     </Link>

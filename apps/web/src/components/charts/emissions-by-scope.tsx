@@ -11,16 +11,17 @@ interface ScopeData {
 }
 
 export function EmissionsByScopeChart({ data }: { data: ScopeData }) {
+  const d = data ?? ({} as Partial<ScopeData>);
   const chartData = [
-    { name: "Scope 1", value: data.scope1 },
-    { name: "Scope 2", value: data.scope2Location },
-    { name: "Scope 3", value: data.scope3 },
+    { name: "Scope 1", value: d.scope1 ?? 0 },
+    { name: "Scope 2", value: d.scope2Location ?? 0 },
+    { name: "Scope 3", value: d.scope3 ?? 0 },
   ];
   const total = chartData.reduce((a, b) => a + b.value, 0);
   return (
     <ResponsiveContainer width="100%" height={260}>
       <PieChart>
-        <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 12 }} formatter={(v: number) => `${(v).toLocaleString("en-IN")} tCO2e`} />
+        <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 12 }} formatter={(v: number) => `${(v ?? 0).toLocaleString("en-IN")} tCO2e`} />
         <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
         <Pie data={chartData} cx="50%" cy="50%" innerRadius={56} outerRadius={94} paddingAngle={2} dataKey="value">
           {chartData.map((_, i) => <Cell key={i} fill={COLORS[i]} stroke="#fff" strokeWidth={2} />)}

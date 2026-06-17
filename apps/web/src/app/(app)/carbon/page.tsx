@@ -31,10 +31,10 @@ export default function CarbonOverviewPage() {
       {e && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KpiCard label="Scope 1" value={formatTonnesCO2e(e.scope1, { compact: true })} icon={<Factory className="h-4 w-4" />} delta={-3.8} positiveIsGood={false} hint="Direct (stationary + mobile)" />
-            <KpiCard label="Scope 2 (Loc)" value={formatTonnesCO2e(e.scope2Location, { compact: true })} icon={<Zap className="h-4 w-4" />} delta={-12.2} positiveIsGood={false} hint="Grid average factors" />
-            <KpiCard label="Scope 2 (Mkt)" value={formatTonnesCO2e(e.scope2Market, { compact: true })} icon={<Zap className="h-4 w-4" />} delta={-31.0} positiveIsGood={false} hint="With REC procurement" />
-            <KpiCard label="Scope 3" value={formatTonnesCO2e(e.scope3, { compact: true })} icon={<TrendingDown className="h-4 w-4" />} delta={-4.2} positiveIsGood={false} hint="All 15 categories" />
+            <KpiCard label="Scope 1" value={formatTonnesCO2e(e.scope1 ?? 0, { compact: true })} icon={<Factory className="h-4 w-4" />} delta={-3.8} positiveIsGood={false} hint="Direct (stationary + mobile)" />
+            <KpiCard label="Scope 2 (Loc)" value={formatTonnesCO2e(e.scope2Location ?? 0, { compact: true })} icon={<Zap className="h-4 w-4" />} delta={-12.2} positiveIsGood={false} hint="Grid average factors" />
+            <KpiCard label="Scope 2 (Mkt)" value={formatTonnesCO2e(e.scope2Market ?? 0, { compact: true })} icon={<Zap className="h-4 w-4" />} delta={-31.0} positiveIsGood={false} hint="With REC procurement" />
+            <KpiCard label="Scope 3" value={formatTonnesCO2e(e.scope3 ?? 0, { compact: true })} icon={<TrendingDown className="h-4 w-4" />} delta={-4.2} positiveIsGood={false} hint="All 15 categories" />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-5">
@@ -43,12 +43,12 @@ export default function CarbonOverviewPage() {
                 <CardTitle>Monthly Trend</CardTitle>
                 <CardDescription>Scope 1 / 2 / 3 stacked</CardDescription>
               </CardHeader>
-              <CardContent><EmissionsTrendChart data={e.monthlyTrend} /></CardContent>
+              <CardContent><EmissionsTrendChart data={Array.isArray(e.monthlyTrend) ? e.monthlyTrend : []} /></CardContent>
             </Card>
             <Card className="lg:col-span-2">
               <CardHeader>
                 <CardTitle>Scope Breakdown</CardTitle>
-                <CardDescription>{formatTonnesCO2e(e.total, { compact: true })} total</CardDescription>
+                <CardDescription>{formatTonnesCO2e(e.total ?? 0, { compact: true })} total</CardDescription>
               </CardHeader>
               <CardContent><EmissionsByScopeChart data={e} /></CardContent>
             </Card>
@@ -60,7 +60,7 @@ export default function CarbonOverviewPage() {
                 <CardTitle>Energy Mix</CardTitle>
                 <CardDescription>By source · MWh</CardDescription>
               </CardHeader>
-              <CardContent><EnergyMixChart data={e.energyMix} /></CardContent>
+              <CardContent><EnergyMixChart data={Array.isArray(e.energyMix) ? e.energyMix : []} /></CardContent>
             </Card>
             <Card>
               <CardHeader>
@@ -77,7 +77,7 @@ export default function CarbonOverviewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {e.intensityTrend.map((r) => (
+                    {(Array.isArray(e.intensityTrend) ? e.intensityTrend : []).map((r) => (
                       <tr key={r.fy} className="border-b border-slate-100">
                         <td className="py-2 font-medium">{r.fy}</td>
                         <td className="py-2 text-right tabular-nums">{formatNumber(r.perRevenue, { decimals: 2 })}</td>

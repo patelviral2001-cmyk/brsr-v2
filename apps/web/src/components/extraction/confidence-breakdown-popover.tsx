@@ -30,7 +30,8 @@ export function ConfidenceBreakdownPopover({ overall, breakdown }: Props) {
         </div>
         <div className="space-y-2.5">
           {LABELS.map((l) => {
-            const v = breakdown[l.key as keyof ConfidenceBreakdown];
+            const raw = breakdown?.[l.key as keyof ConfidenceBreakdown];
+            const v = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
             const pct = Math.round(v * 100);
             const color = v >= 0.9 ? "bg-emerald-500" : v >= 0.75 ? "bg-sky-500" : v >= 0.6 ? "bg-amber-500" : "bg-rose-500";
             return (

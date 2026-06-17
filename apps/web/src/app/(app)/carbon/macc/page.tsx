@@ -9,8 +9,9 @@ import { formatINR } from "@/lib/format";
 
 export default function MaccPage() {
   const { data: projects } = useMacc();
-  const sorted = (projects ?? []).slice().sort((a, b) => a.marginalCostINRPerTCO2e - b.marginalCostINRPerTCO2e);
-  const totalReduction = sorted.reduce((a, b) => a + b.reductionTCO2e, 0);
+  const projectsList = Array.isArray(projects) ? projects : [];
+  const sorted = projectsList.slice().sort((a, b) => (a.marginalCostINRPerTCO2e ?? 0) - (b.marginalCostINRPerTCO2e ?? 0));
+  const totalReduction = sorted.reduce((a, b) => a + (b.reductionTCO2e ?? 0), 0);
 
   return (
     <div className="p-6 space-y-5">
@@ -22,7 +23,7 @@ export default function MaccPage() {
           <CardDescription>{totalReduction.toLocaleString("en-IN")} tCO2e cumulative reduction</CardDescription>
         </CardHeader>
         <CardContent>
-          {projects && <MaccChart projects={projects} />}
+          {projectsList.length > 0 && <MaccChart projects={projectsList} />}
         </CardContent>
       </Card>
 
@@ -48,16 +49,16 @@ export default function MaccPage() {
               {sorted.map((p) => (
                 <tr key={p.id}>
                   <td className="px-4 py-2 font-medium text-slate-900">{p.name}</td>
-                  <td className="px-4 py-2"><Badge variant="outline" size="sm">{p.category.replace("_", " ")}</Badge></td>
-                  <td className="px-4 py-2 text-right tabular-nums">{p.reductionTCO2e.toLocaleString("en-IN")} tCO2e</td>
-                  <td className={`px-4 py-2 text-right tabular-nums ${p.marginalCostINRPerTCO2e < 0 ? "text-emerald-700" : "text-slate-700"}`}>
-                    {p.marginalCostINRPerTCO2e.toLocaleString("en-IN")}
+                  <td className="px-4 py-2"><Badge variant="outline" size="sm">{(p.category ?? "").replace("_", " ")}</Badge></td>
+                  <td className="px-4 py-2 text-right tabular-nums">{(p.reductionTCO2e ?? 0).toLocaleString("en-IN")} tCO2e</td>
+                  <td className={`px-4 py-2 text-right tabular-nums ${(p.marginalCostINRPerTCO2e ?? 0) < 0 ? "text-emerald-700" : "text-slate-700"}`}>
+                    {(p.marginalCostINRPerTCO2e ?? 0).toLocaleString("en-IN")}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums">{p.capexINR > 0 ? formatINR(p.capexINR, { compact: true }) : "—"}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{p.paybackYears > 0 ? `${p.paybackYears} yrs` : "—"}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{(p.capexINR ?? 0) > 0 ? formatINR(p.capexINR, { compact: true }) : "—"}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{(p.paybackYears ?? 0) > 0 ? `${p.paybackYears} yrs` : "—"}</td>
                   <td className="px-4 py-2">
                     <Badge size="sm" variant={p.status === "COMPLETED" ? "success" : p.status === "APPROVED" ? "primary" : p.status === "IN_PROGRESS" ? "info" : "outline"}>
-                      {p.status.replace("_", " ")}
+                      {(p.status ?? "").replace("_", " ")}
                     </Badge>
                   </td>
                 </tr>

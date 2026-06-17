@@ -43,36 +43,36 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="ESG Score"
-          value={kpis?.esgScore.value?.toString() ?? "—"}
-          delta={kpis?.esgScore.delta}
-          hint={`Top ${kpis?.esgScore.percentile ?? 0}th percentile in sector`}
-          ring={{ value: kpis?.esgScore.value ?? 0, max: 100, label: "/ 100" }}
+          value={kpis?.esgScore?.value?.toString() ?? "—"}
+          delta={kpis?.esgScore?.delta}
+          hint={`Top ${kpis?.esgScore?.percentile ?? 0}th percentile in sector`}
+          ring={{ value: kpis?.esgScore?.value ?? 0, max: 100, label: "/ 100" }}
           icon={<Award className="h-4 w-4" />}
         />
         <KpiCard
           label="Total Emissions"
-          value={emissions ? formatTonnesCO2e(emissions.total, { compact: true }) : "—"}
-          delta={kpis?.emissionsTotal.delta}
+          value={emissions?.total != null ? formatTonnesCO2e(emissions.total, { compact: true }) : "—"}
+          delta={kpis?.emissionsTotal?.delta}
           positiveIsGood={false}
           hint="Scope 1 + 2 + 3 (Location)"
-          sparkline={kpis?.emissionsTotal.sparkline}
+          sparkline={kpis?.emissionsTotal?.sparkline}
           icon={<Leaf className="h-4 w-4" />}
         />
         <KpiCard
           label="Energy Intensity"
-          value={kpis ? `${kpis.energyIntensity.value.toFixed(3)}` : "—"}
-          delta={kpis?.energyIntensity.delta}
+          value={kpis?.energyIntensity?.value != null ? `${kpis.energyIntensity.value.toFixed(3)}` : "—"}
+          delta={kpis?.energyIntensity?.delta}
           positiveIsGood={false}
           hint="MWh per ₹1k revenue"
-          sparkline={kpis?.energyIntensity.sparkline}
+          sparkline={kpis?.energyIntensity?.sparkline}
           icon={<Zap className="h-4 w-4" />}
         />
         <KpiCard
           label="Data Completeness"
-          value={kpis ? formatPercent(kpis.dataCompleteness.value, 0) : "—"}
-          delta={kpis?.dataCompleteness.delta}
-          hint={`Target: ${formatPercent(kpis?.dataCompleteness.target ?? 0, 0)}`}
-          ring={{ value: Math.round((kpis?.dataCompleteness.value ?? 0) * 100), max: 100, label: "Done" }}
+          value={kpis?.dataCompleteness?.value != null ? formatPercent(kpis.dataCompleteness.value, 0) : "—"}
+          delta={kpis?.dataCompleteness?.delta}
+          hint={`Target: ${formatPercent(kpis?.dataCompleteness?.target ?? 0, 0)}`}
+          ring={{ value: Math.round((kpis?.dataCompleteness?.value ?? 0) * 100), max: 100, label: "Done" }}
           icon={<BarChart3 className="h-4 w-4" />}
         />
       </div>
@@ -89,7 +89,9 @@ export default function DashboardPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {emissions && <EmissionsTrendChart data={emissions.monthlyTrend} />}
+          {Array.isArray(emissions?.monthlyTrend) && emissions!.monthlyTrend.length > 0 && (
+            <EmissionsTrendChart data={emissions!.monthlyTrend} />
+          )}
         </CardContent>
       </Card>
 
@@ -101,7 +103,9 @@ export default function DashboardPage() {
             <CardDescription>96.8% renewable</CardDescription>
           </CardHeader>
           <CardContent>
-            {emissions && <EnergyMixChart data={emissions.energyMix} />}
+            {Array.isArray(emissions?.energyMix) && emissions!.energyMix.length > 0 && (
+              <EnergyMixChart data={emissions!.energyMix} />
+            )}
           </CardContent>
         </Card>
 
@@ -111,8 +115,8 @@ export default function DashboardPage() {
             <CardDescription>Multi-framework filing readiness</CardDescription>
           </CardHeader>
           <CardContent>
-            {frameworks && (
-              <FrameworkCompletionRings data={frameworks.map((f) => ({ id: f.id, pct: f.completionPct / 100 }))} />
+            {Array.isArray(frameworks) && frameworks.length > 0 && (
+              <FrameworkCompletionRings data={frameworks.map((f) => ({ id: f.id, pct: (f.completionPct ?? 0) / 100 }))} />
             )}
           </CardContent>
         </Card>
@@ -123,7 +127,7 @@ export default function DashboardPage() {
             <CardDescription>Auto-detected this quarter</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {anomalies?.map((a) => (
+            {(Array.isArray(anomalies) ? anomalies : []).map((a) => (
               <div key={a.id} className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 transition-colors hover:bg-slate-50">
                 <div className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-full ${a.severity === "HIGH" ? "bg-rose-50 text-rose-700" : a.severity === "MEDIUM" ? "bg-amber-50 text-amber-700" : "bg-slate-50 text-slate-500"}`}>
                   <AlertTriangle className="h-3.5 w-3.5" />
@@ -152,7 +156,9 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {netzero && <NetZeroPathway data={netzero.pathway} />}
+            {Array.isArray(netzero?.pathway) && netzero!.pathway.length > 0 && (
+              <NetZeroPathway data={netzero!.pathway} />
+            )}
           </CardContent>
         </Card>
 
@@ -193,10 +199,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {activity?.map((a) => (
+              {(Array.isArray(activity) ? activity : []).map((a) => (
                 <div key={a.id} className="flex items-center gap-3 rounded-lg border border-transparent p-2.5 transition-colors hover:border-slate-200 hover:bg-slate-50">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700">
-                    {a.actor.slice(0, 2).toUpperCase()}
+                    {(a.actor ?? "?").slice(0, 2).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1 text-sm">
                     <span className="font-medium text-slate-900">{a.actor}</span>

@@ -11,8 +11,9 @@ const COLORS = ["#047857", "#059669", "#10b981", "#34d399", "#6ee7b7", "#a7f3d0"
 
 export default function Scope3Page() {
   const { data: cats } = useScope3();
-  const reported = (cats ?? []).filter((c) => c.status === "REPORTED");
-  const total = reported.reduce((a, b) => a + b.value, 0);
+  const catsList = Array.isArray(cats) ? cats : [];
+  const reported = catsList.filter((c) => c.status === "REPORTED");
+  const total = reported.reduce((a, b) => a + (b.value ?? 0), 0);
 
   return (
     <div className="p-6 space-y-5">
@@ -53,13 +54,13 @@ export default function Scope3Page() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {cats?.map((c, i) => (
+                {catsList.map((c) => (
                   <tr key={c.id}>
                     <td className="px-4 py-2 font-mono text-xs text-slate-500">{c.id}</td>
                     <td className="px-4 py-2 font-medium text-slate-900">{c.name}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{c.value > 0 ? c.value.toLocaleString("en-IN") : "—"}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{(c.value ?? 0) > 0 ? (c.value ?? 0).toLocaleString("en-IN") : "—"}</td>
                     <td className="px-4 py-2">
-                      <Badge size="sm" variant="outline">{c.methodology.replace("_", " ")}</Badge>
+                      <Badge size="sm" variant="outline">{(c.methodology ?? "").replace("_", " ")}</Badge>
                     </td>
                     <td className="px-4 py-2">
                       <Badge size="sm" variant={c.status === "REPORTED" ? "success" : c.status === "NA" ? "outline" : "warning"}>

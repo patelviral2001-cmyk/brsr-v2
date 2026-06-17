@@ -18,12 +18,12 @@ export default function OrganizationSettingsPage() {
           <Card>
             <CardHeader><CardTitle>General</CardTitle></CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
-              <Field label="Tenant Name" value={t.name} />
-              <Field label="Slug" value={t.slug} />
-              <Field label="Fiscal Year Start" value={`${t.fiscalYearStart} (Apr 1 default for India)`} />
-              <Field label="Reporting Currency" value={t.reportingCurrency} />
-              <Field label="Industries" value={t.industries.join(", ")} />
-              <Field label="Countries" value={t.countries.join(", ")} />
+              <Field label="Tenant Name" value={t.name ?? ""} />
+              <Field label="Slug" value={t.slug ?? ""} />
+              <Field label="Fiscal Year Start" value={`${t.fiscalYearStart ?? ""} (Apr 1 default for India)`} />
+              <Field label="Reporting Currency" value={t.reportingCurrency ?? ""} />
+              <Field label="Industries" value={(Array.isArray(t.industries) ? t.industries : []).join(", ")} />
+              <Field label="Countries" value={(Array.isArray(t.countries) ? t.countries : []).join(", ")} />
             </CardContent>
           </Card>
           <Card>
@@ -37,7 +37,7 @@ export default function OrganizationSettingsPage() {
           <Card>
             <CardHeader><CardTitle>Feature Flags</CardTitle></CardHeader>
             <CardContent className="grid gap-2 sm:grid-cols-2">
-              {Object.entries(t.featureFlags).map(([k, v]) => (
+              {Object.entries(t.featureFlags ?? {}).map(([k, v]) => (
                 <div key={k} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
                   <code className="text-xs text-slate-600">{k}</code>
                   <Badge variant={v ? "success" : "outline"} size="sm">{v ? "ON" : "OFF"}</Badge>

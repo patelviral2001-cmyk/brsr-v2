@@ -26,7 +26,7 @@ export default function CalculationRunPage() {
           <Card className="lg:col-span-2">
             <CardHeader><CardTitle>Inputs</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              {run.inputs.map((i) => (
+              {(Array.isArray(run.inputs) ? run.inputs : []).map((i) => (
                 <div key={i.key} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
                   <code className="text-xs text-slate-600">{i.key}</code>
                   <div><span className="font-semibold tabular-nums">{formatNumber(i.value)}</span> <span className="text-xs text-slate-400">{i.unit}</span></div>
@@ -34,7 +34,7 @@ export default function CalculationRunPage() {
               ))}
               <div className="pt-4">
                 <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Formula</h4>
-                <FormulaDisplay formula={run.formula} />
+                <FormulaDisplay formula={run.formula ?? ""} />
               </div>
             </CardContent>
           </Card>

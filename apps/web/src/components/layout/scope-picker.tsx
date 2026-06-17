@@ -70,7 +70,7 @@ export function ScopePicker() {
 function TreeNode({ node, path, activeId, onSelect, query, depth = 0 }: { node: HierarchyNode; path: HierarchyNode[]; activeId: string; onSelect: (p: HierarchyNode[]) => void; query: string; depth?: number; }) {
   const [expanded, setExpanded] = useState(depth < 2);
   const Icon = ICON[node.type] ?? Building2;
-  const matches = !query || node.name.toLowerCase().includes(query);
+  const matches = !query || (node.name ?? "").toLowerCase().includes(query);
   const children = node.children ?? [];
 
   return (

@@ -18,13 +18,13 @@ export default function AuditLogPage() {
   const [actionFilter, setActionFilter] = useState("all");
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const filtered = (events ?? []).filter((e) => {
-    if (actionFilter !== "all" && !e.action.startsWith(actionFilter)) return false;
-    if (q && !`${e.action} ${e.entityName ?? ""} ${e.actorName}`.toLowerCase().includes(q.toLowerCase())) return false;
+  const filtered = (Array.isArray(events) ? events : []).filter((e) => {
+    if (actionFilter !== "all" && !(e.action ?? "").startsWith(actionFilter)) return false;
+    if (q && !`${e.action ?? ""} ${e.entityName ?? ""} ${e.actorName ?? ""}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   });
 
-  const uniqueActions = Array.from(new Set((events ?? []).map((e) => e.action.split(".")[0])));
+  const uniqueActions = Array.from(new Set((Array.isArray(events) ? events : []).map((e) => (e.action ?? "").split(".")[0])));
 
   return (
     <div className="p-6 space-y-5">
@@ -71,7 +71,7 @@ function TimelineRow({ ev, isOpen, onToggle }: { ev: AuditEvent; isOpen: boolean
       <button onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50">
         {ev.diff ? <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isOpen ? "rotate-0" : "-rotate-90"}`} /> : <span className="w-4" />}
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-700">
-          {ev.actorName.slice(0, 2).toUpperCase()}
+          {(ev.actorName ?? "").slice(0, 2).toUpperCase()}
         </div>
         <div className="flex-1 min-w-0 text-sm">
           <span className="font-medium text-slate-900">{ev.actorName}</span>

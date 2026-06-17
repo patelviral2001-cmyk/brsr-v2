@@ -24,22 +24,25 @@ export default function MappingsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {metrics?.map((m) => (
-                  <tr key={m.id}>
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-slate-900">{m.name}</div>
-                      <code className="text-[10px] text-slate-500">{m.canonicalKey}</code>
-                    </td>
-                    {FRAMEWORKS.map((f) => {
-                      const map = m.frameworks.find((x) => x.id === f.id);
-                      return (
-                        <td key={f.id} className="px-3 py-2">
-                          {map ? <Badge size="sm" variant="outline" style={{ borderColor: `${f.color}40`, color: f.color }}>{map.ref}</Badge> : <span className="text-slate-300">—</span>}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {(Array.isArray(metrics) ? metrics : []).map((m) => {
+                  const mFrameworks = Array.isArray(m?.frameworks) ? m.frameworks : [];
+                  return (
+                    <tr key={m.id}>
+                      <td className="px-3 py-2">
+                        <div className="font-medium text-slate-900">{m.name}</div>
+                        <code className="text-[10px] text-slate-500">{m.canonicalKey}</code>
+                      </td>
+                      {FRAMEWORKS.map((f) => {
+                        const map = mFrameworks.find((x) => x?.id === f.id);
+                        return (
+                          <td key={f.id} className="px-3 py-2">
+                            {map ? <Badge size="sm" variant="outline" style={{ borderColor: `${f.color}40`, color: f.color }}>{map.ref}</Badge> : <span className="text-slate-300">—</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

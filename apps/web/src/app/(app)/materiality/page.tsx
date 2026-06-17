@@ -11,8 +11,8 @@ import Link from "next/link";
 
 export default function MaterialityPage() {
   const { data } = useMateriality();
-  const topics = data?.topics ?? [];
-  const stakeholders = data?.stakeholders ?? [];
+  const topics = Array.isArray(data?.topics) ? data.topics : [];
+  const stakeholders = Array.isArray(data?.stakeholders) ? data.stakeholders : [];
   const highPriority = topics.filter((t) => t.priority === "HIGH");
 
   return (
@@ -53,7 +53,7 @@ export default function MaterialityPage() {
                     <Badge variant="outline" size="sm">{t.category}</Badge>
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {t.frameworks.map((f) => <Badge key={f} size="sm" variant="ghost">{f}</Badge>)}
+                    {(Array.isArray(t.frameworks) ? t.frameworks : []).map((f) => <Badge key={f} size="sm" variant="ghost">{f}</Badge>)}
                   </div>
                 </div>
                 <div className="text-right text-xs">
@@ -75,7 +75,7 @@ export default function MaterialityPage() {
               <div key={s.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
                 <div className="flex-1">
                   <div className="text-sm font-medium text-slate-900">{s.group}</div>
-                  <div className="text-xs text-slate-500">{s.engagementMode.join(" · ")}</div>
+                  <div className="text-xs text-slate-500">{(Array.isArray(s.engagementMode) ? s.engagementMode : []).join(" · ")}</div>
                 </div>
                 <div className="flex gap-3 text-xs">
                   <div className="text-right">

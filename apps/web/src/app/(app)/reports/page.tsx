@@ -10,6 +10,7 @@ import { Plus, Sparkles } from "lucide-react";
 
 export default function ReportsPage() {
   const { data: reports } = useReports();
+  const reportsList = Array.isArray(reports) ? reports : [];
   return (
     <div className="p-6 space-y-5">
       <PageHeader
@@ -23,13 +24,13 @@ export default function ReportsPage() {
       />
 
       <div className="flex gap-2">
-        <Badge variant="primary">{reports?.length ?? 0} total</Badge>
-        <Badge variant="success">{reports?.filter((r) => r.status === "ASSURED").length ?? 0} assured</Badge>
-        <Badge variant="info">{reports?.filter((r) => r.status === "DRAFT").length ?? 0} draft</Badge>
+        <Badge variant="primary">{reportsList.length} total</Badge>
+        <Badge variant="success">{reportsList.filter((r) => r.status === "ASSURED").length} assured</Badge>
+        <Badge variant="info">{reportsList.filter((r) => r.status === "DRAFT").length} draft</Badge>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {reports?.map((r) => <ReportCard key={r.id} report={r} />)}
+        {reportsList.map((r) => <ReportCard key={r.id} report={r} />)}
       </div>
     </div>
   );

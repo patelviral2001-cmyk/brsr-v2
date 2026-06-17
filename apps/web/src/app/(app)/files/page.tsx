@@ -19,11 +19,11 @@ export default function FilesPage() {
   const [docTypeFilter, setDocTypeFilter] = useState<string>("all");
 
   const filtered = useMemo(() => {
-    if (!files) return [];
+    if (!Array.isArray(files)) return [];
     return files.filter((f) => {
       if (statusFilter !== "all" && f.status !== statusFilter) return false;
       if (docTypeFilter !== "all" && f.docType !== docTypeFilter) return false;
-      if (q && !f.filename.toLowerCase().includes(q.toLowerCase())) return false;
+      if (q && !(f.filename ?? "").toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     });
   }, [files, statusFilter, docTypeFilter, q]);

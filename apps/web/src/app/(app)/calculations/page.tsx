@@ -43,7 +43,7 @@ export default function CalculationsPage() {
       />
       <Card>
         <CardContent className="p-0">
-          {runs && <DataTable data={runs} columns={cols} rowKey={(r) => r.id} dense />}
+          <DataTable data={Array.isArray(runs) ? runs : []} columns={cols} rowKey={(r) => r.id} dense />
         </CardContent>
       </Card>
     </div>

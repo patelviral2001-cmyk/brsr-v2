@@ -11,11 +11,12 @@ const CATEGORY_COLOR: Record<MaterialTopic["category"], string> = {
 };
 
 export function MaterialityMatrix({ topics }: { topics: MaterialTopic[] }) {
-  const data = topics.map((t) => ({
+  const safeTopics = Array.isArray(topics) ? topics : [];
+  const data = safeTopics.map((t) => ({
     name: t.name,
-    impact: t.impactScore * 100,
-    financial: t.financialScore * 100,
-    weight: t.stakeholderWeight * 100,
+    impact: (t.impactScore ?? 0) * 100,
+    financial: (t.financialScore ?? 0) * 100,
+    weight: (t.stakeholderWeight ?? 0) * 100,
     category: t.category,
     priority: t.priority,
   }));
@@ -35,26 +36,30 @@ export function MaterialityMatrix({ topics }: { topics: MaterialTopic[] }) {
         <Tooltip
           contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, fontSize: 12 }}
           cursor={{ strokeDasharray: "3 3" }}
-          formatter={(v: number) => v.toFixed(0)}
+          formatter={(v: number) => (v ?? 0).toFixed(0)}
           labelFormatter={() => ""}
           content={({ payload }) => {
             if (!payload?.length) return null;
-            const d = payload[0].payload;
+            const d = payload[0]?.payload;
+            if (!d) return null;
             return (
               <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-elevated">
                 <div className="font-semibold text-slate-900">{d.name}</div>
                 <div className="mt-1 text-slate-500">{d.category} · {d.priority}</div>
                 <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
-                  <div><div className="text-slate-400">Impact</div><div className="font-medium text-slate-700">{d.impact.toFixed(0)}</div></div>
-                  <div><div className="text-slate-400">Financial</div><div className="font-medium text-slate-700">{d.financial.toFixed(0)}</div></div>
-                  <div><div className="text-slate-400">SH Weight</div><div className="font-medium text-slate-700">{d.weight.toFixed(0)}</div></div>
+                  <div><div className="text-slate-400">Impact</div><div className="font-medium text-slate-700">{(d.impact ?? 0).toFixed(0)}</div></div>
+                  <div><div className="text-slate-400">Financial</div><div className="font-medium text-slate-700">{(d.financial ?? 0).toFixed(0)}</div></div>
+                  <div><div className="text-slate-400">SH Weight</div><div className="font-medium text-slate-700">{(d.weight ?? 0).toFixed(0)}</div></div>
                 </div>
               </div>
             );
           }}
         />
         <Scatter data={data} fill="#047857">
-          {data.map((d, i) => <Cell key={i} fill={CATEGORY_COLOR[d.category]} fillOpacity={0.7} stroke={CATEGORY_COLOR[d.category]} strokeWidth={1.5} />)}
+          {data.map((d, i) => {
+            const c = CATEGORY_COLOR[d.category] ?? "#94a3b8";
+            return <Cell key={i} fill={c} fillOpacity={0.7} stroke={c} strokeWidth={1.5} />;
+          })}
         </Scatter>
       </ScatterChart>
     </ResponsiveContainer>

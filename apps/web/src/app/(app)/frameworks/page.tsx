@@ -22,8 +22,9 @@ export default function FrameworksPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {frameworks?.map((f) => {
+        {(Array.isArray(frameworks) ? frameworks : []).map((f) => {
           const meta = FRAMEWORKS.find((x) => x.id === f.id);
+          const status = f.status ?? "ON_TRACK";
           return (
             <Link key={f.id} href={`/frameworks/${f.id}`}>
               <Card className="cursor-pointer">
@@ -37,17 +38,17 @@ export default function FrameworksPage() {
                       <h3 className="mt-1 text-lg font-bold text-slate-900">{f.name}</h3>
                       <p className="text-xs text-slate-500">{f.fullName}</p>
                     </div>
-                    <CompletionRing value={f.completionPct} color={meta?.color ?? "#047857"} />
+                    <CompletionRing value={f.completionPct ?? 0} color={meta?.color ?? "#047857"} />
                   </div>
                   <div className="mt-4 space-y-1.5 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Answered</span>
-                      <span className="font-semibold tabular-nums text-slate-900">{f.answered} / {f.total}</span>
+                      <span className="font-semibold tabular-nums text-slate-900">{f.answered ?? 0} / {f.total ?? 0}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Status</span>
-                      <Badge variant={f.status === "ON_TRACK" ? "success" : f.status === "AT_RISK" ? "warning" : "danger"} size="sm">
-                        {f.status.replace("_", " ")}
+                      <Badge variant={status === "ON_TRACK" ? "success" : status === "AT_RISK" ? "warning" : "danger"} size="sm">
+                        {String(status).replace("_", " ")}
                       </Badge>
                     </div>
                     {f.deadline && (
@@ -56,9 +57,11 @@ export default function FrameworksPage() {
                         <span>Due {formatRelative(f.deadline)}</span>
                       </div>
                     )}
-                    <div className="mt-2 border-t border-slate-100 pt-2 text-[10px] text-slate-400">
-                      Last updated {formatRelative(f.lastUpdated)}
-                    </div>
+                    {f.lastUpdated && (
+                      <div className="mt-2 border-t border-slate-100 pt-2 text-[10px] text-slate-400">
+                        Last updated {formatRelative(f.lastUpdated)}
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

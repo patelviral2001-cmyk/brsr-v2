@@ -17,10 +17,10 @@ export default function NetZeroPage() {
       {nz && (
         <>
           <div className="grid gap-4 sm:grid-cols-4">
-            <Stat label="Base year" value={String(nz.baseYear)} />
-            <Stat label="Base emissions" value={formatTonnesCO2e(nz.baseEmissions, { compact: true })} />
-            <Stat label="Target reduction" value={formatPercent(nz.targetReduction, 0)} />
-            <Stat label="Target year" value={String(nz.targetYear)} />
+            <Stat label="Base year" value={String(nz.baseYear ?? "—")} />
+            <Stat label="Base emissions" value={formatTonnesCO2e(nz.baseEmissions ?? 0, { compact: true })} />
+            <Stat label="Target reduction" value={formatPercent(nz.targetReduction ?? 0, 0)} />
+            <Stat label="Target year" value={String(nz.targetYear ?? "—")} />
           </div>
 
           <Card>
@@ -36,7 +36,7 @@ export default function NetZeroPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent><NetZeroPathway data={nz.pathway} /></CardContent>
+            <CardContent><NetZeroPathway data={Array.isArray(nz.pathway) ? nz.pathway : []} /></CardContent>
           </Card>
         </>
       )}

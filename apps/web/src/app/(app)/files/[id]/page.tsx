@@ -25,10 +25,10 @@ export default function FileDetailPage() {
     <div className="p-6">
       <PageHeader
         title={file?.filename ?? "File"}
-        description={file ? `${file.docType.replace("_", " ")} · ${formatBytes(file.sizeBytes)} · uploaded by ${file.uploadedBy}` : "Loading…"}
+        description={file ? `${(file.docType ?? "UNKNOWN").replace(/_/g, " ")} · ${formatBytes(file.sizeBytes ?? 0)} · uploaded by ${file.uploadedBy ?? "unknown"}` : "Loading…"}
         actions={file && (
           <>
-            <Badge variant="outline" className={cn(STATUS_COLORS[file.status])}>{file.status}</Badge>
+            <Badge variant="outline" className={cn(file.status ? STATUS_COLORS[file.status] : "")}>{file.status ?? "UNKNOWN"}</Badge>
             <Button variant="outline" size="sm"><Download className="h-4 w-4" />Original</Button>
             <Button size="sm">Re-extract</Button>
           </>
@@ -49,7 +49,7 @@ export default function FileDetailPage() {
                   )}>
                     <div className="flex items-center justify-between">
                       <div className="truncate text-xs font-medium text-slate-900">{f.fieldLabel}</div>
-                      <Badge variant="outline" size="sm">{Math.round(f.confidence * 100)}%</Badge>
+                      <Badge variant="outline" size="sm">{Math.round((f.confidence ?? 0) * 100)}%</Badge>
                     </div>
                     <div className="mt-0.5 truncate text-[10px] text-slate-500">{String(f.value)} {f.unit}</div>
                   </button>

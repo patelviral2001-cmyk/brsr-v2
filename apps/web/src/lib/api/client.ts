@@ -168,8 +168,29 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Unwrap the backend response envelope `{data, meta, traceId, requestId}`
+// so every caller sees the payload directly. We only unwrap when the body
+// looks like the envelope (has a `data` key alongside one of the metadata
+// keys); plain payloads pass through untouched so endpoints that return
+// raw shapes (e.g. file URLs) still work.
+function looksLikeEnvelope(body: unknown): body is { data: unknown } {
+  if (!body || typeof body !== "object") return false;
+  const keys = Object.keys(body as Record<string, unknown>);
+  if (!keys.includes("data")) return false;
+  return (
+    keys.includes("meta") ||
+    keys.includes("traceId") ||
+    keys.includes("requestId")
+  );
+}
+
 apiClient.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    if (looksLikeEnvelope(r.data)) {
+      r.data = (r.data as { data: unknown }).data;
+    }
+    return r;
+  },
   async (error: AxiosError) => {
     const config = (error.config ?? {}) as RetryableConfig;
     const status = error.response?.status ?? 0;

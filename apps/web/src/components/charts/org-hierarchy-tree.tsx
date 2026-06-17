@@ -14,11 +14,13 @@ const COLORS: Record<string, string> = {
 
 export function OrgHierarchyRadial({ root, size = 720 }: { root: HierarchyNode; size?: number }) {
   const layout = useMemo(() => {
+    if (!root) return null;
     const h = hierarchy(root, (d) => d.children ?? []);
     const radius = size / 2 - 80;
-    const treeLayout = d3tree<HierarchyNode>().size([2 * Math.PI, radius]).separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth);
+    const treeLayout = d3tree<HierarchyNode>().size([2 * Math.PI, radius]).separation((a, b) => (a.parent === b.parent ? 1 : 2) / (a.depth || 1));
     return treeLayout(h);
   }, [root, size]);
+  if (!layout) return <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full" />;
 
   const cx = size / 2, cy = size / 2;
   const polar = (angle: number, r: number): [number, number] => [Math.cos(angle - Math.PI / 2) * r + cx, Math.sin(angle - Math.PI / 2) * r + cy];

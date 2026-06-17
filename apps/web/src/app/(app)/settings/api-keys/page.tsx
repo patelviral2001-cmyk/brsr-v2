@@ -28,7 +28,7 @@ export default function ApiKeysPage() {
                   <button className="text-slate-400 hover:text-slate-700"><Copy className="h-3 w-3" /></button>
                 </div>
                 <div className="mt-0.5 text-xs text-slate-500">By {k.createdBy} on {k.createdAt} · Last used {k.lastUsed}</div>
-                <div className="mt-1.5 flex flex-wrap gap-1">{k.scopes.map((s) => <Badge size="sm" variant="ghost" key={s}>{s}</Badge>)}</div>
+                <div className="mt-1.5 flex flex-wrap gap-1">{(Array.isArray(k.scopes) ? k.scopes : []).map((s) => <Badge size="sm" variant="ghost" key={s}>{s}</Badge>)}</div>
               </div>
               <Button variant="outline" size="sm">Revoke</Button>
             </div>
