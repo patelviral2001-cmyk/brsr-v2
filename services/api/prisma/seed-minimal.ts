@@ -60,6 +60,7 @@ async function main() {
         code: 'GRP',
         ltreePath: 'grp',
         consolidationMethod: 'FULL',
+        controlType: 'OPERATIONAL',
         operationalBoundary: 'OPERATIONAL_CONTROL',
         country: 'IN',
       } as any,

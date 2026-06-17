@@ -5,6 +5,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { firstValueFrom } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 import { Decimal } from 'decimal.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Storage } from '../common/utils/s3.client';
@@ -20,6 +21,20 @@ const ALLOWED_MIME = new Set([
   'image/jpeg',
 ]);
 const MAX_BYTES = 50 * 1024 * 1024;
+
+// Whitelist of DocType enum values (matches schema.prisma).
+const KNOWN_DOC_TYPES = new Set([
+  'UTILITY_BILL', 'FUEL_INVOICE', 'HR_PAYROLL', 'HR_HEADCOUNT_SHEET',
+  'WATER_BILL', 'WASTE_MANIFEST', 'EHS_INCIDENT_REPORT', 'AUDITED_FINANCIALS',
+  'BOARD_MINUTES', 'CSR_SPEND_REPORT', 'ENERGY_AUDIT', 'RENEWABLE_PPA',
+  'FUGITIVE_LOG', 'SUPPLIER_SAQ', 'GENERIC', 'UNKNOWN',
+]);
+
+function normalizeDocType(docType?: string): string {
+  if (!docType) return 'GENERIC';
+  const up = docType.toUpperCase();
+  return KNOWN_DOC_TYPES.has(up) ? up : 'GENERIC';
+}
 
 @Injectable()
 export class FilesService {
@@ -59,31 +74,41 @@ export class FilesService {
       metadata: { tenantId, uploaderId: actorId, originalName: file.originalname },
     });
 
+    // Resolve scope node — use provided one, else first node for the tenant.
+    let scopeNodeId = dto.scopeNodeId;
+    if (!scopeNodeId) {
+      const node = await (this.prisma as any).entityNode.findFirst({
+        where: { tenantId },
+        select: { id: true },
+      });
+      if (!node) {
+        throw new BadRequestException(
+          'No scopeNodeId provided and no entity node exists for this tenant',
+        );
+      }
+      scopeNodeId = node.id;
+    }
+
+    // Compute a stable content hash for deduplication.
+    const sha256 = createHash('sha256').update(file.buffer).digest('hex');
+
+    // Validate docType against DocType enum, else fall back to GENERIC.
+    const docType = normalizeDocType(dto.docType);
+
     const doc = await (this.prisma as any).document.create({
       data: {
         tenantId,
-        uploaderId: actorId,
+        scopeNodeId,
+        uploadedBy: actorId,
         originalName: file.originalname,
         mimeType: file.mimetype,
         sizeBytes: file.size,
+        sha256,
         s3Bucket: bucket,
         s3Key,
-        docType: dto.docType,
-        scopeNodeId: dto.scopeNodeId,
-        periodStart: dto.periodStart ? new Date(dto.periodStart) : null,
-        periodEnd: dto.periodEnd ? new Date(dto.periodEnd) : null,
+        docType,
+        status: 'PENDING',
         tags: dto.tags?.split(',').map((t) => t.trim()).filter(Boolean) ?? [],
-        status: 'UPLOADED',
-      },
-    });
-
-    // Emit ingest event row (used by downstream consumers)
-    await (this.prisma as any).ingestEvent.create({
-      data: {
-        tenantId,
-        documentId: doc.id,
-        type: 'DOC_UPLOADED',
-        payload: { docType: dto.docType, sizeBytes: file.size },
       },
     });
 
@@ -122,13 +147,13 @@ export class FilesService {
       );
       await (this.prisma as any).document.update({
         where: { id: documentId },
-        data: { status: 'EXTRACTING', dispatchedAt: new Date() },
+        data: { status: 'CLASSIFIED' },
       });
     } catch (e) {
       this.logger.error(`Extraction dispatch failed for ${documentId}: ${(e as Error).message}`);
       await (this.prisma as any).document.update({
         where: { id: documentId },
-        data: { status: 'DISPATCH_FAILED', lastError: (e as Error).message },
+        data: { status: 'REJECTED' },
       });
     }
   }
