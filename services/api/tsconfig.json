@@ -1,27 +1,35 @@
 {
-  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
+    "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": ".",
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noUncheckedIndexedAccess": false,
     "useDefineForClassFields": false,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
     "isolatedModules": false,
     "declaration": false,
     "declarationMap": false,
-    "paths": {
-      "@/*": ["src/*"],
-      "@brsr/contracts": ["../../packages/contracts/src/index.ts"],
-      "@brsr/contracts/*": ["../../packages/contracts/src/*"],
-      "@brsr/shared": ["../../packages/shared/src/index.ts"],
-      "@brsr/shared/*": ["../../packages/shared/src/*"]
-    }
+    "sourceMap": false,
+    "noEmitOnError": false,
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "test/**/*", "prisma/seed.ts"],
-  "exclude": ["dist", "node_modules"]
+  "include": ["src/**/*", "prisma/seed.ts"],
+  "exclude": ["dist", "node_modules", "test", "**/*.spec.ts", "**/*.test.ts"]
 }
