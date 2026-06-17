@@ -18,8 +18,8 @@ COPY package-lock.json* ./
 COPY prisma ./prisma
 
 # Install ALL deps (we run via tsx at runtime so need dev deps too)
-RUN npm install --legacy-peer-deps --no-audit --no-fund \
- && npm install --legacy-peer-deps --no-audit --no-fund --save-dev tsx
+RUN npm install --include=dev --legacy-peer-deps --no-audit --no-fund \
+ && npm install --include=dev --legacy-peer-deps --no-audit --no-fund --save-dev tsx
 
 # Copy source
 COPY tsconfig*.json nest-cli.json ./
