@@ -16,7 +16,10 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
+// Server-side calls (NextAuth callbacks) prefer INTERNAL_API_URL so that
+// container-to-container traffic skips the public DNS + TLS round-trip.
 const API_URL =
+  process.env.INTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   "http://localhost:8080/api/v1";
