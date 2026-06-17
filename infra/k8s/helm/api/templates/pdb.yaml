@@ -1,0 +1,12 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "brsr-api.fullname" . }}
+  labels: {{- include "brsr-api.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels: {{- include "brsr-api.selectorLabels" . | nindent 6 }}
+  unhealthyPodEvictionPolicy: AlwaysAllow
+{{- end }}

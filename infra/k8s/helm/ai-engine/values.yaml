@@ -1,0 +1,138 @@
+image:
+  repository: 111111111111.dkr.ecr.ap-south-1.amazonaws.com/brsr/ai-engine
+  tag: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 4
+
+# Set true to schedule on the GPU node group (g5.xlarge) for self-hosted bge-m3 etc.
+gpu:
+  enabled: false
+  count: 1
+
+serviceAccount:
+  create: true
+  name: ai-engine
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/brsr-prod-ai-engine
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8001
+
+ports:
+  app: 8001
+  metrics: 9464
+
+env:
+  PYTHONUNBUFFERED: "1"
+  PORT: "8001"
+  LOG_LEVEL: info
+  LANGFUSE_HOST: https://langfuse.brsrai.com
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.observability.svc:4317
+  OTEL_SERVICE_NAME: ai-engine
+  QDRANT_URL: http://qdrant.brsr-data.svc:6333
+  REGION: ap-south-1
+
+envFrom:
+  - secretRef: { name: ai-engine-runtime }
+
+resources:
+  requests: { cpu: 500m,  memory: 2Gi }
+  limits:   { cpu: 4,     memory: 8Gi }
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 25
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    path: /ready
+    initialDelaySeconds: 15
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 60
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 40
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+    - type: Pods
+      pods:
+        metric: { name: brsr_ai_engine_queue_depth }
+        target: { type: AverageValue, averageValue: "10" }
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { name: brsr-app } }
+        - namespaceSelector: { matchLabels: { name: brsr-ai } }
+      ports: [{ port: 8001, protocol: TCP }]
+  egress:
+    - to: []
+      ports:
+        - { port: 443, protocol: TCP }
+        - { port: 53,  protocol: UDP }
+    - to:
+        - namespaceSelector: { matchLabels: { name: brsr-data } }
+      ports:
+        - { port: 6333, protocol: TCP }
+        - { port: 5432, protocol: TCP }
+        - { port: 6379, protocol: TCP }
+        - { port: 9200, protocol: TCP }
+
+podAnnotations:
+  linkerd.io/inject: enabled
+  config.linkerd.io/proxy-cpu-request: 100m
+  config.linkerd.io/proxy-memory-request: 64Mi
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+  seccompProfile: { type: RuntimeDefault }
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+nodeSelector:
+  role: app   # override to "ai-gpu" when gpu.enabled
+
+tolerations: []
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: ai-engine
+
+volumes:
+  - name: tmp
+    emptyDir: { sizeLimit: 4Gi }
+  - name: models
+    emptyDir: { sizeLimit: 8Gi }
+
+volumeMounts:
+  - { name: tmp,    mountPath: /tmp }
+  - { name: models, mountPath: /opt/models }

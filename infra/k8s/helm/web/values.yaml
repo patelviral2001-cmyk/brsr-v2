@@ -1,0 +1,123 @@
+image:
+  repository: 111111111111.dkr.ecr.ap-south-1.amazonaws.com/brsr/web
+  tag: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 4
+
+serviceAccount:
+  create: true
+  name: web
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/brsr-prod-web
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ports:
+  app: 3000
+  metrics: 9464
+
+env:
+  NODE_ENV: production
+  PORT: "3000"
+  NEXT_PUBLIC_API_BASE_URL: https://api.brsrai.com
+  NEXT_TELEMETRY_DISABLED: "1"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.observability.svc:4317
+  OTEL_SERVICE_NAME: web
+
+envFrom:
+  - secretRef:
+      name: web-runtime
+
+resources:
+  requests: { cpu: 250m, memory: 512Mi }
+  limits:   { cpu: 1,    memory: 1Gi }
+
+probes:
+  liveness:
+    path: /api/health
+    initialDelaySeconds: 15
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    path: /api/health
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  startup:
+    path: /api/health
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 30
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 30
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+    - type: Pods
+      pods:
+        metric: { name: nginx_ingress_controller_nginx_process_connections_total }
+        target: { type: AverageValue, averageValue: "100" }
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { name: ingress } }
+      ports:
+        - { port: 3000, protocol: TCP }
+  egress:
+    - to: []
+      ports:
+        - { port: 443, protocol: TCP }
+        - { port: 53,  protocol: UDP }
+    - to:
+        - namespaceSelector: { matchLabels: { name: brsr-app } }
+      ports:
+        - { port: 4000, protocol: TCP }
+
+podAnnotations:
+  linkerd.io/inject: enabled
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+  seccompProfile: { type: RuntimeDefault }
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+nodeSelector:
+  role: app
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: web
+
+volumes:
+  - name: cache
+    emptyDir: { sizeLimit: 512Mi }
+
+volumeMounts:
+  - name: cache
+    mountPath: /.next/cache

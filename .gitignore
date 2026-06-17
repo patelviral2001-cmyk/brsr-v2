@@ -1,0 +1,90 @@
+# ---- Dependencies ----
+node_modules/
+.pnpm-store/
+.yarn/
+.npm/
+
+# ---- Build outputs ----
+dist/
+build/
+out/
+.next/
+.turbo/
+.swc/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+
+# ---- Generated code ----
+generated/
+*.generated.ts
+*.generated.js
+src/generated/
+
+# ---- Prisma ----
+services/api/prisma/.tmp/
+services/*/prisma/migrations/migration_lock.toml.bak
+
+# ---- Env / Secrets ----
+.env
+.env.*
+!.env.example
+!.env.template
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+
+# ---- Logs ----
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ---- IDE ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+*.swp
+*.swo
+*.sublime-workspace
+
+# ---- Testing ----
+*.snap.actual
+playwright-report/
+test-results/
+.cypress/screenshots/
+.cypress/videos/
+
+# ---- Storybook ----
+storybook-static/
+
+# ---- Docker / Local infra ----
+infra/data/
+infra/volumes/
+.docker/
+
+# ---- AI / model caches ----
+.cache/
+.huggingface/
+.langchain/
+.ollama/
+
+# ---- Misc ----
+*.tgz
+*.zip
+.tmp/
+tmp/
+.history/
+
+.vercel

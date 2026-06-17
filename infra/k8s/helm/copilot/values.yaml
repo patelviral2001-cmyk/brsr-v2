@@ -1,0 +1,129 @@
+image:
+  repository: 111111111111.dkr.ecr.ap-south-1.amazonaws.com/brsr/copilot
+  tag: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+
+serviceAccount:
+  create: true
+  name: copilot
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/brsr-prod-copilot
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 4200
+
+ports:
+  app: 4200
+  metrics: 9464
+
+env:
+  NODE_ENV: production
+  PORT: "4200"
+  METRICS_PORT: "9464"
+  API_BASE_URL: http://api.brsr-app.svc:80
+  AI_ENGINE_URL: http://ai-engine.brsr-ai.svc:80
+  LANGFUSE_HOST: https://langfuse.brsrai.com
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.observability.svc:4317
+  OTEL_SERVICE_NAME: copilot
+
+envFrom:
+  - secretRef: { name: copilot-runtime }
+
+resources:
+  requests: { cpu: 500m, memory: 1Gi }
+  limits:   { cpu: 2,    memory: 3Gi }
+
+probes:
+  liveness:
+    path: /healthz/live
+    initialDelaySeconds: 20
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    path: /healthz/ready
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  startup:
+    path: /healthz/live
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 30
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+    - type: Pods
+      pods:
+        metric: { name: brsr_copilot_active_conversations }
+        target: { type: AverageValue, averageValue: "25" }
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { name: brsr-app } }
+        - namespaceSelector: { matchLabels: { name: ingress } }
+      ports: [{ port: 4200, protocol: TCP }]
+  egress:
+    - to: []
+      ports:
+        - { port: 443, protocol: TCP }
+        - { port: 53,  protocol: UDP }
+    - to:
+        - namespaceSelector: { matchLabels: { name: brsr-app } }
+        - namespaceSelector: { matchLabels: { name: brsr-ai } }
+        - namespaceSelector: { matchLabels: { name: brsr-data } }
+      ports:
+        - { port: 80, protocol: TCP }
+        - { port: 8001, protocol: TCP }
+        - { port: 5432, protocol: TCP }
+        - { port: 6379, protocol: TCP }
+        - { port: 6333, protocol: TCP }
+
+podAnnotations:
+  linkerd.io/inject: enabled
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+  seccompProfile: { type: RuntimeDefault }
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+nodeSelector:
+  role: app
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: copilot
+
+volumes:
+  - name: tmp
+    emptyDir: { sizeLimit: 1Gi }
+
+volumeMounts:
+  - { name: tmp, mountPath: /tmp }

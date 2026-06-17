@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "brsr-web.fullname" . }}
+  labels: {{- include "brsr-web.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 25%, maxUnavailable: 0 }
+  selector:
+    matchLabels: {{- include "brsr-web.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "brsr-web.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ toJson .Values | sha256sum }}
+        {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      serviceAccountName: {{ include "brsr-web.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 30
+      securityContext: {{- toYaml .Values.securityContext | nindent 8 }}
+      nodeSelector: {{- toYaml .Values.nodeSelector | nindent 8 }}
+      topologySpreadConstraints: {{- toYaml .Values.topologySpreadConstraints | nindent 8 }}
+      containers:
+        - name: web
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: {{ .Values.ports.app }}, protocol: TCP }
+          env:
+            {{- range $k, $v := .Values.env }}
+            - { name: {{ $k }}, value: {{ $v | quote }} }
+            {{- end }}
+          envFrom: {{- toYaml .Values.envFrom | nindent 12 }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            httpGet: { path: {{ .Values.probes.startup.path }}, port: http }
+            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          livenessProbe:
+            httpGet: { path: {{ .Values.probes.liveness.path }}, port: http }
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet: { path: {{ .Values.probes.readiness.path }}, port: http }
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          lifecycle:
+            preStop:
+              exec: { command: ["/bin/sh","-c","sleep 10"] }
+          volumeMounts: {{- toYaml .Values.volumeMounts | nindent 12 }}
+      volumes: {{- toYaml .Values.volumes | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "brsr-web.fullname" . }}
+  labels: {{- include "brsr-web.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - { port: {{ .Values.service.port }}, targetPort: http, protocol: TCP, name: http }
+  selector: {{- include "brsr-web.selectorLabels" . | nindent 4 }}
+---
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "brsr-web.serviceAccountName" . }}
+  labels: {{- include "brsr-web.labels" . | nindent 4 }}
+  annotations: {{- toYaml .Values.serviceAccount.annotations | nindent 4 }}
+{{- end }}
+---
+{{- if .Values.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "brsr-web.fullname" . }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "brsr-web.fullname" . }}
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  metrics: {{- toYaml .Values.hpa.metrics | nindent 4 }}
+{{- end }}
+---
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "brsr-web.fullname" . }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels: {{- include "brsr-web.selectorLabels" . | nindent 6 }}
+{{- end }}
+---
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "brsr-web.fullname" . }}
+spec:
+  podSelector:
+    matchLabels: {{- include "brsr-web.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress: {{- toYaml .Values.networkPolicy.ingress | nindent 4 }}
+  egress:  {{- toYaml .Values.networkPolicy.egress  | nindent 4 }}
+{{- end }}

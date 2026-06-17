@@ -1,0 +1,89 @@
+{
+  "realm": "brsr",
+  "enabled": true,
+  "displayName": "BRSR AI Platform",
+  "displayNameHtml": "<strong>BRSR</strong> AI Platform",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "roles": {
+    "realm": [
+      {
+        "name": "GROUP_ADMIN",
+        "description": "Top-of-tree admin for the corporate group; full multi-tenant control."
+      },
+      {
+        "name": "SUSTAINABILITY_MANAGER",
+        "description": "Owns disclosures, evidence approvals, and report publication for an entity."
+      },
+      {
+        "name": "PLANT_MANAGER",
+        "description": "Submits site-level operational data and uploads supporting evidence."
+      },
+      {
+        "name": "AUDITOR",
+        "description": "Read-only assurance role with access to evidence trails and audit logs."
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "brsr-api",
+      "name": "BRSR API (service)",
+      "description": "Confidential service-account client used by backend-to-backend calls.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "brsr-dev-api-secret-change-me",
+      "attributes": {
+        "access.token.lifespan": "900"
+      }
+    },
+    {
+      "clientId": "brsr-web",
+      "name": "BRSR Web (SPA)",
+      "description": "Public PKCE client used by apps/web and apps/supplier-portal.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:3001"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "access.token.lifespan": "900"
+      }
+    }
+  ]
+}

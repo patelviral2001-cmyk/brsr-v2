@@ -1,0 +1,59 @@
+{
+  "name": "brsr-platform",
+  "version": "2.0.0",
+  "private": true,
+  "description": "BRSR AI Platform v2 — enterprise multi-tenant ESG, sustainability and BRSR reporting platform.",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=20.11.0",
+    "pnpm": ">=9.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "clean": "turbo run clean && rimraf node_modules .turbo",
+    "db:generate": "pnpm --filter @brsr/api prisma:generate",
+    "db:migrate": "pnpm --filter @brsr/api prisma:migrate",
+    "db:seed": "pnpm --filter @brsr/api prisma:seed",
+    "db:reset": "pnpm --filter @brsr/api prisma:reset",
+    "docker:dev:up": "docker compose -f infra/docker-compose.dev.yml up -d",
+    "docker:dev:down": "docker compose -f infra/docker-compose.dev.yml down",
+    "docker:dev:logs": "docker compose -f infra/docker-compose.dev.yml logs -f",
+    "prepare": "husky install || true"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@typescript-eslint/eslint-plugin": "^7.7.0",
+    "@typescript-eslint/parser": "^7.7.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-unused-imports": "^3.1.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2",
+    "prettier": "^3.2.5",
+    "rimraf": "^5.0.5",
+    "turbo": "^2.0.4",
+    "typescript": "^5.4.5"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

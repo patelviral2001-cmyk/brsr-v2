@@ -1,0 +1,124 @@
+image:
+  repository: 111111111111.dkr.ecr.ap-south-1.amazonaws.com/brsr/workflow
+  tag: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 4
+
+serviceAccount:
+  create: true
+  name: workflow
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/brsr-prod-workflow
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 4300
+
+ports:
+  app: 4300
+  metrics: 9464
+
+env:
+  NODE_ENV: production
+  PORT: "4300"
+  METRICS_PORT: "9464"
+  TEMPORAL_ADDRESS: temporal-frontend.brsr-data.svc:7233
+  REDIS_URL: rediss://redis.brsr-data.svc:6379/1
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo.observability.svc:4317
+  OTEL_SERVICE_NAME: workflow
+
+envFrom:
+  - secretRef: { name: workflow-runtime }
+
+resources:
+  requests: { cpu: 500m, memory: 1Gi }
+  limits:   { cpu: 4,    memory: 3Gi }
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 20
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    path: /ready
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  startup:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 30
+    timeoutSeconds: 3
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 30
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+    - type: Pods
+      pods:
+        metric: { name: temporal_task_slot_utilization }
+        target: { type: AverageValue, averageValue: "0.7" }
+
+pdb:
+  enabled: true
+  minAvailable: 2
+
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { name: brsr-app } }
+        - namespaceSelector: { matchLabels: { name: observability } }
+      ports: [{ port: 9464, protocol: TCP }]
+  egress:
+    - to: []
+      ports:
+        - { port: 443, protocol: TCP }
+        - { port: 53,  protocol: UDP }
+    - to:
+        - namespaceSelector: { matchLabels: { name: brsr-data } }
+      ports:
+        - { port: 7233, protocol: TCP }
+        - { port: 6379, protocol: TCP }
+        - { port: 5432, protocol: TCP }
+
+podAnnotations:
+  linkerd.io/inject: enabled
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+  seccompProfile: { type: RuntimeDefault }
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+
+nodeSelector:
+  role: app
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: workflow
+
+volumes:
+  - name: tmp
+    emptyDir: { sizeLimit: 1Gi }
+
+volumeMounts:
+  - { name: tmp, mountPath: /tmp }
