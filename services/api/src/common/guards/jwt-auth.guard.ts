@@ -107,7 +107,26 @@ export class JwtAuthGuard implements CanActivate {
     return null;
   }
 
-  private verify(token: string): Promise<KeycloakClaims> {
+  private async verify(token: string): Promise<KeycloakClaims> {
+    // 1. Try our HS256-signed JWT (issued by /iam/auth/login).
+    const sharedSecret = this.config?.get<string>('JWT_SECRET');
+    if (sharedSecret) {
+      try {
+        const decoded = jwt.verify(token, sharedSecret, {
+          algorithms: ['HS256'],
+          issuer: 'brsr-api',
+          ignoreExpiration: false,
+        }) as KeycloakClaims;
+        return decoded;
+      } catch {
+        // fall through to JWKS path
+      }
+    }
+
+    // 2. Fall back to Keycloak RS256 via JWKS, if configured.
+    if (!this.jwks) {
+      throw new Error('No JWKS client and HS256 verification failed');
+    }
     return new Promise((resolve, reject) => {
       const getKey: jwt.GetPublicKeyOrSecret = (header, cb) => {
         if (!header.kid) return cb(new Error('JWT missing kid'));
