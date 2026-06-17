@@ -63,6 +63,7 @@ async function main() {
         controlType: 'OPERATIONAL',
         operationalBoundary: 'OPERATIONAL_CONTROL',
         country: 'IN',
+        effectiveFrom: new Date('2024-04-01'),
       } as any,
     });
     console.log(`  ✓ Root entity: ${root.name}`);
