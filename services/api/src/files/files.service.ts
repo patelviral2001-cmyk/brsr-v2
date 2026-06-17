@@ -24,16 +24,17 @@ const MAX_BYTES = 50 * 1024 * 1024;
 
 // Whitelist of DocType enum values (matches schema.prisma).
 const KNOWN_DOC_TYPES = new Set([
-  'UTILITY_BILL', 'FUEL_INVOICE', 'HR_PAYROLL', 'HR_HEADCOUNT_SHEET',
-  'WATER_BILL', 'WASTE_MANIFEST', 'EHS_INCIDENT_REPORT', 'AUDITED_FINANCIALS',
-  'BOARD_MINUTES', 'CSR_SPEND_REPORT', 'ENERGY_AUDIT', 'RENEWABLE_PPA',
-  'FUGITIVE_LOG', 'SUPPLIER_SAQ', 'GENERIC', 'UNKNOWN',
+  'UTILITY_BILL', 'FUEL_INVOICE', 'ELECTRICITY_BILL', 'WATER_BILL',
+  'WASTE_MANIFEST', 'HR_SHEET', 'PAYROLL', 'SAFETY_INCIDENT',
+  'AUDITED_FINANCIALS', 'GRI_INDEX', 'BRSR_DRAFT', 'POLICY_DOC',
+  'BOARD_MINUTES', 'CERTIFICATE', 'SUPPLIER_RESPONSE',
+  'EMISSIONS_INVENTORY', 'OTHER',
 ]);
 
 function normalizeDocType(docType?: string): string {
-  if (!docType) return 'GENERIC';
+  if (!docType) return 'OTHER';
   const up = docType.toUpperCase();
-  return KNOWN_DOC_TYPES.has(up) ? up : 'GENERIC';
+  return KNOWN_DOC_TYPES.has(up) ? up : 'OTHER';
 }
 
 @Injectable()
