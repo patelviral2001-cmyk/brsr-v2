@@ -43,7 +43,9 @@ export function FileUploader({
   const upload = useUploadFile();
 
   // Fall back to the currently scoped node if the caller didn't pass one.
-  const scopedNodeFromStore = useScopeStoreOrNull()?.activeScopeId;
+  // IMPORTANT: select a primitive, not an object — selecting an object
+  // returns a new reference every render and causes infinite re-renders.
+  const scopedNodeFromStore = useScopeStore((s) => s.activeScopeId);
   const effectiveScopeNodeId = scopeNodeId ?? scopedNodeFromStore ?? undefined;
 
   const onDrop = useCallback(
@@ -202,13 +204,3 @@ export function FileUploader({
   );
 }
 
-// ---- Safe scope-store reader -------------------------------------
-// The scope store is optional — the uploader is sometimes rendered
-// before it's hydrated, in which case we silently fall back to no scope.
-function useScopeStoreOrNull(): { activeScopeId?: string } | null {
-  try {
-    return useScopeStore((s) => ({ activeScopeId: s.activeScopeId }));
-  } catch {
-    return null;
-  }
-}
