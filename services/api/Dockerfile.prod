@@ -19,7 +19,7 @@ COPY prisma ./prisma
 
 # Install ALL deps (we run via tsx at runtime so need dev deps too)
 RUN npm install --include=dev --legacy-peer-deps --no-audit --no-fund \
- && npm install --include=dev --legacy-peer-deps --no-audit --no-fund --save-dev tsx
+ && npm install --include=dev --legacy-peer-deps --no-audit --no-fund --save-dev ts-node tsconfig-paths typescript
 
 # Copy source
 COPY tsconfig*.json nest-cli.json ./
@@ -43,7 +43,7 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
 fi
 
 echo ">>> Starting BRSR API on :${PORT:-4000}"
-exec npx tsx src/main.ts
+exec npx ts-node --transpile-only -r tsconfig-paths/register src/main.ts
 EOF
 RUN chmod +x /app/entrypoint.sh
 
