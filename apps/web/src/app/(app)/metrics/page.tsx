@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState } from "@/components/common/empty-state";
+import { DataErrorBanner } from "@/components/common/data-error-banner";
 import { TableSkeleton } from "@/components/common/loading-skeleton";
 import { MetricRegistryCard } from "@/components/metrics/metric-registry-card";
 import { MetricEventTable } from "@/components/metrics/metric-event-table";
@@ -21,8 +22,8 @@ import { toast } from "sonner";
 export default function MetricsPage() {
   const search = useSearchParams();
   const initialTab = search?.get("tab") === "events" ? "events" : "registry";
-  const { data: registry, isLoading: regLoading } = useMetricRegistry();
-  const { data: events, isLoading: evtLoading } = useMetricEvents();
+  const { data: registry, isLoading: regLoading, isError: regError, refetch: regRefetch } = useMetricRegistry();
+  const { data: events, isLoading: evtLoading, isError: evtError } = useMetricEvents();
   const [q, setQ] = useState("");
   const [fw, setFw] = useState("all");
 
@@ -67,6 +68,19 @@ export default function MetricsPage() {
           </Button>
         }
       />
+
+      {(regError || evtError) ? (
+        <DataErrorBanner
+          message={
+            regError && evtError
+              ? "Failed to load the metric registry and metric events."
+              : regError
+                ? "Failed to load the metric registry."
+                : "Failed to load metric events."
+          }
+          onRetry={() => regRefetch()}
+        />
+      ) : null}
 
       <Tabs defaultValue={initialTab}>
         <TabsList>

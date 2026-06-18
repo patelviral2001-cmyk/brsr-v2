@@ -120,6 +120,30 @@ def _hash_tenant(tenant_id: str) -> str:
     return hashlib.sha256(tenant_id.encode()).hexdigest()[:16] if tenant_id else ""
 
 
+def _ensure_json_keyword(
+    messages: list[dict[str, Any]],
+    response_format: Optional[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """When `response_format=json_object`, OpenAI requires the literal word
+    'json' to appear in the messages — otherwise the call 400s. We append a
+    tiny system-level reminder rather than mutating the caller's prompts.
+    """
+    if not response_format:
+        return messages
+    if response_format.get("type") != "json_object":
+        return messages
+    flat = " ".join(
+        str(m.get("content") or "") if not isinstance(m.get("content"), list)
+        else " ".join(str(p.get("text") or "") for p in m["content"] if isinstance(p, dict))
+        for m in messages
+    ).lower()
+    if "json" in flat:
+        return messages
+    return list(messages) + [
+        {"role": "system", "content": "Respond with a JSON object only."}
+    ]
+
+
 def _classify_openai_error(exc: BaseException) -> LLMError:
     """Translate openai SDK exceptions to our internal hierarchy."""
     msg = str(exc)
@@ -396,12 +420,29 @@ class LLMRouter:
     ) -> dict[str, Any]:
         t0 = time.perf_counter()
 
+        # ----- Model-family parameter adapter -----
+        # GPT-5 / o1 / o3 / o4 families enforce three constraints that the
+        # legacy chat-completions kwargs violate:
+        #   1. `max_tokens` is rejected → must use `max_completion_tokens`
+        #   2. `temperature` only accepts the default (1.0)
+        #   3. `response_format=json_object` requires the literal word "json"
+        #      to appear somewhere in the messages
+        # Skipping any of these returns a hard 400 and the doc lands in
+        # REVIEW_NEEDED with zero fields. Apply the adapter before sending.
+        is_strict_family = model.startswith(("gpt-5", "o1", "o3", "o4"))
+
         kwargs: dict[str, Any] = {
             "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
+            "messages": _ensure_json_keyword(messages, response_format),
         }
+        if is_strict_family:
+            kwargs["max_completion_tokens"] = max_tokens
+            # Omit `temperature` entirely — sending even 1.0 is fine, but
+            # omitting matches the default and is forward-compatible.
+        else:
+            kwargs["temperature"] = temperature
+            kwargs["max_tokens"] = max_tokens
+
         if response_format is not None:
             kwargs["response_format"] = response_format
         if tools:

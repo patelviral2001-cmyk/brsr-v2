@@ -32,6 +32,7 @@ import { AuditModule } from './audit/audit.module';
 import { CopilotModule } from './copilot/copilot.module';
 import { HealthModule } from './health/health.module';
 import { DashboardGraphqlModule } from './graphql/dashboard.graphql.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { WorkflowModule } from './workflow/workflow.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -111,6 +112,7 @@ import { configValidationSchema } from './config/config.schema';
     AuditModule,
     CopilotModule,
     HealthModule,
+    DashboardModule,
     DashboardGraphqlModule,
     WorkflowModule,
   ],

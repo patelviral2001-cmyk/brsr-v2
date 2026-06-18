@@ -14,20 +14,26 @@ import {
 } from 'class-validator';
 
 export class EmissionsQueryDto {
-  @ApiProperty({ description: 'Scope number (1|2|3)' })
+  // Made optional so the Dashboard's `useEmissionsOverview` query (which
+  // sends no args) gets a useful default — all scopes, current FY — rather
+  // than a 400. When provided, the service still filters precisely.
+  @ApiPropertyOptional({ description: 'Scope number (1|2|3). Omit for all-scopes rollup.' })
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(3)
-  scope!: number;
+  scope?: number;
 
-  @ApiProperty({ description: 'Period start (ISO 8601)' })
+  @ApiPropertyOptional({ description: 'Period start (ISO 8601). Defaults to current FY start.' })
+  @IsOptional()
   @IsDateString()
-  from!: string;
+  from?: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsDateString()
-  to!: string;
+  to?: string;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()

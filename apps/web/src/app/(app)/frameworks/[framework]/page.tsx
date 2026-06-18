@@ -51,7 +51,7 @@ export default function FrameworkDetailPage() {
             <CardContent className="max-h-[760px] overflow-y-auto p-3 scrollbar-thin">
               <BRSRSectionTree
                 sections={safeSections}
-                activeId={activeSection?.id ?? null}
+                activeId={activeSection?.id ?? undefined}
                 onSelect={setActiveId}
               />
             </CardContent>

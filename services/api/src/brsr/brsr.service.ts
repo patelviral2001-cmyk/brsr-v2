@@ -177,6 +177,86 @@ export class BrsrService {
     return out;
   }
 
+  // ---- Sections (frontend-shaped) ----
+
+  /**
+   * Returns the BRSR section tree the Frameworks UI expects. Auto-defaults
+   * scope to all root entity nodes for the tenant, calls `resolve`, then
+   * groups by principle prefix (`P6-Q6` → principle `P6`) so the frontend's
+   * BRSRSection[]/BRSRQuestion[] shape lights up without any joins on
+   * its side.
+   */
+  async sections(
+    tenantId: string,
+    args: { fy: string; framework: BrsrFramework },
+  ): Promise<
+    Array<{
+      id: string;
+      principle: string;
+      title: string;
+      total: number;
+      answered: number;
+      questions: Array<{
+        id: string;
+        ref: string;
+        text: string;
+        answerType: 'NUMERIC' | 'TEXT';
+        answer?: string | number;
+        metricKey?: string;
+        evidence?: string[];
+      }>;
+    }>
+  > {
+    const roots: { id: string }[] = await (this.prisma as any).entityNode.findMany({
+      where: { tenantId },
+      select: { id: true },
+      take: 50,
+    });
+    const scopeNodeIds = roots.map((r) => r.id);
+    if (scopeNodeIds.length === 0) return [];
+    const resolved = await this.resolve(tenantId, {
+      fy: args.fy,
+      framework: args.framework,
+      scopeNodeIds,
+    } as ResolveBrsrDto);
+
+    // Group by principle prefix (e.g. P6-Q6 → P6). Mapping rows that don't
+    // follow the Principle-prefixed shape fall under a single "General"
+    // bucket so they're still visible.
+    const groups = new Map<
+      string,
+      { principle: string; title: string; questions: Array<any> }
+    >();
+    for (const r of resolved) {
+      const label = r.label ?? '';
+      const principle = /^P(\d+)/i.exec(label)?.[0]?.toUpperCase() ?? 'General';
+      const groupId = principle;
+      const existing = groups.get(groupId) ?? {
+        principle,
+        title: principle === 'General' ? 'General' : `Principle ${principle.slice(1)}`,
+        questions: [],
+      };
+      existing.questions.push({
+        id: r.label,
+        ref: r.label,
+        text: r.sectionId ?? r.label,
+        answerType: typeof r.value === 'number' ? 'NUMERIC' : 'TEXT',
+        answer: r.value as string | number | undefined,
+        metricKey: undefined,
+        evidence: r.evidence?.documentIds ?? [],
+      });
+      groups.set(groupId, existing);
+    }
+    return Array.from(groups.values()).map((g) => ({
+      id: g.principle.toLowerCase(),
+      principle: g.principle,
+      title: g.title,
+      total: g.questions.length,
+      answered: g.questions.filter((q) => q.answer != null).length,
+      questions: g.questions,
+    }));
+  }
+
   // ---- Preview ----
 
   async preview(tenantId: string, dto: PreviewBrsrDto): Promise<{ html: string }> {

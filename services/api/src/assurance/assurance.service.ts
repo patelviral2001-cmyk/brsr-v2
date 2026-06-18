@@ -242,14 +242,20 @@ export class AssuranceService {
     });
     if (!before) throw new NotFoundException('Exception not found');
 
-    const status =
-      dto.status?.toUpperCase() === 'CLOSED' ? 'CLOSED' : 'RESPONDED';
+    // Default to RESPONDED if caller didn't pick a state. IN_REVIEW is the
+    // intermediate state while audit team drafts a reply; CLOSED is terminal
+    // and stamps closedAt.
+    const status = dto.status ?? 'RESPONDED';
+    // Block illegal transitions: a CLOSED exception cannot be re-opened.
+    if (before.status === 'CLOSED' && status !== 'CLOSED') {
+      throw new BadRequestException('Cannot reopen a CLOSED exception');
+    }
     const updated = await (this.prisma as any).auditException.update({
       where: { id },
       data: {
         managementResponse: dto.response ?? null,
         status: status as any,
-        closedAt: status === 'CLOSED' ? new Date() : null,
+        closedAt: status === 'CLOSED' ? new Date() : before.closedAt,
       },
     });
     await this.audit.log({

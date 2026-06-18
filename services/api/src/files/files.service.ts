@@ -230,14 +230,21 @@ export class FilesService {
     try {
       const aiUrl = `${this.config.get<string>('AI_ENGINE_URL')}/extract`;
       const presigned = await this.s3.presignGet(this.s3.bucketEvidence(), s3Key, 60 * 60);
+      // The AI engine reaches us inside the docker network; it cannot resolve
+      // PUBLIC_BASE_URL from its DNS namespace, and the URI-versioned path is
+      // /api/v1/v1/... (global prefix /api/v1 + URI version v1). The shared
+      // secret travels via env (INTERNAL_CALLBACK_SECRET on both sides), so we
+      // do NOT include it in the body — the AI engine schema forbids extras.
+      const internalApiBase = this.config.get<string>('INTERNAL_API_URL') ?? 'http://api:4000';
+      const callbackUrl = `${internalApiBase}/api/v1/v1/files/extraction-callback`;
       await firstValueFrom(
         this.http.post(aiUrl, {
           file_id: documentId,
           s3_url: presigned,
           tenant_id: tenantId,
           doc_type_hint: docTypeHint,
-          callback_url: this.config.get<string>('PUBLIC_BASE_URL') + '/api/v1/files/extraction-callback',
-          callback_secret: this.config.get<string>('INTERNAL_CALLBACK_SECRET'),
+          callback_url: callbackUrl,
+          callback_secret_header: 'x-internal-secret',
         }),
       );
       await (this.prisma as any).document.update({
@@ -245,7 +252,13 @@ export class FilesService {
         data: { status: 'CLASSIFIED' },
       });
     } catch (e) {
-      this.logger.error(`Extraction dispatch failed for ${documentId}: ${(e as Error).message}`);
+      // Capture the response body when present so the operator can see WHY
+      // the AI engine rejected the dispatch (axios attaches it on response.data).
+      const err = e as { message?: string; response?: { status?: number; data?: unknown } };
+      const detail = err.response?.data ? ` body=${JSON.stringify(err.response.data).slice(0, 500)}` : '';
+      this.logger.error(
+        `Extraction dispatch failed for ${documentId}: ${err.message}${detail}`,
+      );
       await (this.prisma as any).document.update({
         where: { id: documentId },
         data: { status: 'REJECTED' },
@@ -253,10 +266,25 @@ export class FilesService {
     }
   }
 
+  // Whitelisted via schema.prisma DocStatus enum. Keep in sync if the schema
+  // is extended — an unknown value silently filters to zero rows in Prisma.
+  private static readonly DOC_STATUSES = new Set([
+    'PENDING','UPLOADED','CLASSIFIED','EXTRACTED','EXTRACTION_FAILED',
+    'PARTIAL','NEEDS_REVIEW','REVIEW_NEEDED','APPROVED','REJECTED',
+  ]);
+
   async list(
     tenantId: string,
     q: { docType?: string; status?: string; scopeNodeId?: string; take?: number; skip?: number },
   ) {
+    // Clamp pagination so a tenant can't request unbounded scans (DoS).
+    const take = Math.min(Math.max(1, q.take ?? 50), 200);
+    const skip = Math.max(0, q.skip ?? 0);
+    if (q.status && !FilesService.DOC_STATUSES.has(q.status)) {
+      throw new BadRequestException(
+        `Invalid status. Allowed: ${[...FilesService.DOC_STATUSES].join(',')}`,
+      );
+    }
     return (this.prisma as any).document.findMany({
       where: {
         tenantId,
@@ -265,8 +293,8 @@ export class FilesService {
         ...(q.scopeNodeId ? { scopeNodeId: q.scopeNodeId } : {}),
       },
       orderBy: { uploadedAt: 'desc' },
-      take: q.take ?? 50,
-      skip: q.skip ?? 0,
+      take,
+      skip,
     });
   }
 
@@ -366,6 +394,11 @@ export class FilesService {
 
       for (const f of dto.fields) {
         const isNumeric = typeof f.value === 'number' || (typeof f.value === 'string' && /^-?\d+(\.\d+)?$/.test(f.value as string));
+        // Period carried by the AI engine when its rule/regex extractors
+        // parsed the bill cycle. Stored on the field so the later promote
+        // to metric_event has the values it needs without a doc fallback.
+        const ps = f.periodStart ? new Date(f.periodStart) : undefined;
+        const pe = f.periodEnd ? new Date(f.periodEnd) : undefined;
         await (tx as any).extractionField.create({
           data: {
             tenantId: dto.tenantId,
@@ -374,6 +407,8 @@ export class FilesService {
             valueText: isNumeric ? null : (typeof f.value === 'object' ? JSON.stringify(f.value) : String(f.value ?? '')),
             valueNum: isNumeric ? new Decimal(String(f.value)) : null,
             unitExtracted: f.unit,
+            periodStart: ps && !Number.isNaN(ps.getTime()) ? ps : undefined,
+            periodEnd: pe && !Number.isNaN(pe.getTime()) ? pe : undefined,
             sourcePage: f.pageNumber,
             sourceBbox: f.bbox ?? undefined,
             rawText: f.evidenceText ?? '',

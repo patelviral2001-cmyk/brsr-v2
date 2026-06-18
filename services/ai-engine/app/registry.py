@@ -158,6 +158,23 @@ METRIC_REGISTRY.update(
             ],
             llm_hint="Electricity purchased from utility / grid (non-renewable).",
         ),
+        # purchased_electricity_kwh is the DB-canonical key used by
+        # framework_mapping rows (BRSR P6-Q6, GRI 305-2, TCFD Metrics-b,
+        # IFRS_S2 S2-29.a.ii). Emit it directly so the DISCOM extractor
+        # output survives the pipeline filter and lands on a key that the
+        # backend's promote-to-metric_event path can match.
+        "purchased_electricity_kwh": _energy_metric(
+            "purchased_electricity_kwh",
+            "Purchased electricity (kWh) — grid",
+            aliases=[
+                "purchased electricity", "grid electricity", "utility electricity",
+                "units consumed", "total units consumed", "energy consumed",
+            ],
+            regex_patterns=[
+                r"(?:total\s+units\s+consumed|units\s+consumed|energy\s+consumed[^\n]{0,10}kWh)\s*[:\-]\s*([\d,\.]+)",
+            ],
+            llm_hint="Electricity purchased from the grid/utility for the reporting period.",
+        ),
         "diesel_l": _energy_metric(
             "diesel_l",
             "Diesel consumption (litres)",
