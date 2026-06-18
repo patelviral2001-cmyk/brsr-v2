@@ -1,0 +1,19 @@
+HAZARDOUS WASTE MANIFEST — FORM 10
+Mumbai Waste Management Ltd
+================================================================
+Generator Facility: PLANT 1
+Waste Generator CIN: U24290MH2002PLC123456
+Manifest Period: 2024-04-01 to 2024-04-30
+
+Waste Category, Quantity (kg), Disposal Method
+Hazardous waste, 1500, Incineration
+Non-hazardous waste, 8500, Landfill
+E-waste, 120, Recycling
+Plastic waste, 300, Recycling
+Battery waste, 45, Recycling
+
+Total Hazardous waste: 1500 kg
+Total Non-hazardous waste: 8500 kg
+Waste recycled: 2200 kg
+Waste sent to landfill: 3800 kg
+Waste sent to incineration: 1500 kg

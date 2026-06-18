@@ -1,0 +1,8 @@
+{
+  "doc_type": "UTILITY_BILL",
+  "fields": {
+    "electricity_kwh": 32822,
+    "period_start": "2024-04-01",
+    "period_end": "2024-04-30"
+  }
+}

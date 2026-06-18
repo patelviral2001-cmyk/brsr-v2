@@ -155,6 +155,13 @@ class Settings(BaseSettings):
     CONFIDENCE_HIGH_THRESHOLD: float = 0.85
 
     # ------------------------------------------------------------------
+    # Feature flag — when true, DocumentOrchestrator delegates the
+    # extraction core to the 6-layer ``PipelineOrchestrator``. Default
+    # false until the layered pipeline is fully proven in staging.
+    # ------------------------------------------------------------------
+    USE_LAYERED_PIPELINE: bool = False
+
+    # ------------------------------------------------------------------
     # Per-task model routing.
     # Values are plain OpenAI model strings (e.g. "gpt-5", "gpt-4o").
     # The router consults this dict via `model_router_config[task.value]`.

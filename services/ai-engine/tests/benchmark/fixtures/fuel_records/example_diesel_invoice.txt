@@ -1,0 +1,15 @@
+INDIAN OIL CORPORATION LTD - INDUSTRIAL FUEL SUPPLY DIVISION
+Customer: ACME LOGISTICS - DEPOT 1
+Customer Code: IOC-2345
+Invoice Period: 2024-04-01 to 2024-04-30
+
+Invoice No,Product,Quantity (litres),Rate (INR/L),Amount (INR),Density,Tank
+INV00100,HSD - High Speed Diesel,1500,89.50,134250.00,0.832,T1
+INV00101,HSD - High Speed Diesel,2200,90.10,198220.00,0.832,T2
+INV00102,HSD - High Speed Diesel,1800,89.80,161640.00,0.832,T1
+INV00103,HSD - High Speed Diesel,3500,91.20,319200.00,0.832,T3
+INV00104,HSD - High Speed Diesel,4200,90.50,380100.00,0.832,T2
+
+Total diesel (HSD) consumed: 13,200 litres
+GST @ 5%: 59,400.00
+Total Amount: 1,247,400.00

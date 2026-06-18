@@ -222,6 +222,17 @@ class DocumentOrchestrator:
         self.indexer = RagIndexer()
         self.rule_engine = RuleEngine()
         self.context_loader = ValidationContextLoader()
+        # 6-layer pipeline (new). When ``USE_LAYERED_PIPELINE=true`` the
+        # orchestrator delegates extraction to ``PipelineOrchestrator``
+        # while keeping S3 download, callback delivery and guardrails
+        # here so the existing FastAPI routers don't change.
+        self._layered = None
+        if getattr(self.s, "USE_LAYERED_PIPELINE", False):
+            try:
+                from app.pipeline.orchestrator import PipelineOrchestrator
+                self._layered = PipelineOrchestrator()
+            except Exception:  # noqa: BLE001
+                self._layered = None
 
     # ------------------------------------------------------------------
     # Public — used by routers

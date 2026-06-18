@@ -1,0 +1,15 @@
+MUNICIPAL WATER SUPPLY DEPARTMENT
+Brihanmumbai Municipal Corporation
+================================================================
+Consumer: INDUSTRIAL CUSTOMER 001
+Connection No: W-12345
+Billing Period: 2024-04-01 - 2024-04-30
+
+Previous Reading: 120,000 kL
+Current Reading : 125,500 kL
+Total water withdrawn: 5,500 kL
+Source: Third Party (Municipal Supply)
+
+Water Charges: INR 137,500.00
+Sewerage Charges: INR 68,750.00
+Amount Payable: INR 206,250.00

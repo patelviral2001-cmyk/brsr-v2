@@ -372,7 +372,7 @@ def _layout_from_text(text: str, *, page_no: int) -> tuple[list[TextBlock], list
         size = 16.0 if is_header else 10.0
         blocks.append(
             TextBlock(
-                text=ln.lstrip("# ").strip(),
+                text=ln.lstrip("#-* ").strip(),
                 bbox=BoundingBox(x0=0, y0=y, x1=612.0, y1=y + line_height),
                 font_size_estimate=size,
                 is_header=is_header,
