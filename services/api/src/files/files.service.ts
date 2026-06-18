@@ -75,16 +75,32 @@ export class FilesService {
       metadata: { tenantId, uploaderId: actorId, originalName: file.originalname },
     });
 
-    // Resolve scope node — use provided one, else first node for the tenant.
+    // Resolve scope node — validate that the provided one belongs to this
+    // tenant, else fall back to the tenant's root/first node. Frontend can
+    // ship a stale or mock-data id (from local Zustand state); silently
+    // recovering here avoids a P2003 FK violation that the user can't act on.
     let scopeNodeId = dto.scopeNodeId;
+    if (scopeNodeId) {
+      const ok = await (this.prisma as any).entityNode.findFirst({
+        where: { id: scopeNodeId, tenantId },
+        select: { id: true },
+      });
+      if (!ok) {
+        this.logger.warn(
+          `Provided scopeNodeId ${scopeNodeId} does not belong to tenant ${tenantId} — falling back to default`,
+        );
+        scopeNodeId = undefined;
+      }
+    }
     if (!scopeNodeId) {
       const node = await (this.prisma as any).entityNode.findFirst({
         where: { tenantId },
+        orderBy: { type: 'asc' }, // GROUP comes first alphabetically
         select: { id: true },
       });
       if (!node) {
         throw new BadRequestException(
-          'No scopeNodeId provided and no entity node exists for this tenant',
+          'No entity hierarchy exists for this tenant. Create at least one entity node before uploading documents.',
         );
       }
       scopeNodeId = node.id;

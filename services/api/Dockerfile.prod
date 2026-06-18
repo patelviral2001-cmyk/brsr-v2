@@ -50,6 +50,6 @@ RUN chmod +x /app/entrypoint.sh
 EXPOSE 4000
 
 HEALTHCHECK --interval=20s --timeout=5s --start-period=60s --retries=5 \
-  CMD wget -qO- http://localhost:4000/health || exit 1
+  CMD wget -qO- http://localhost:4000/v1/health || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--", "/app/entrypoint.sh"]

@@ -104,8 +104,16 @@ function mapPrismaError(e: Prisma.PrismaClientKnownRequestError): {
   switch (e.code) {
     case 'P2002': // unique constraint
       return { status: 409, code: 'CONFLICT', message: `Unique constraint violation on ${(e.meta?.target as string[])?.join(', ') ?? 'field'}` };
-    case 'P2003': // foreign key
-      return { status: 409, code: 'FK_CONSTRAINT', message: 'Foreign key constraint failed' };
+    case 'P2003': {
+      // Foreign key constraint — the referenced row doesn't exist. This is
+      // a client-side data error, not a conflict; 422 is the right code.
+      const field = (e.meta as any)?.field_name ?? (e.meta as any)?.constraint ?? 'related record';
+      return {
+        status: 422,
+        code: 'INVALID_REFERENCE',
+        message: `Referenced ${field} does not exist or is not accessible.`,
+      };
+    }
     case 'P2025': // not found for update/delete
       return { status: 404, code: 'NOT_FOUND', message: 'Record not found' };
     case 'P2014':

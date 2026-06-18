@@ -46,7 +46,17 @@ export function FileUploader({
   // IMPORTANT: select a primitive, not an object — selecting an object
   // returns a new reference every render and causes infinite re-renders.
   const scopedNodeFromStore = useScopeStore((s) => s.activeScopeId);
-  const effectiveScopeNodeId = scopeNodeId ?? scopedNodeFromStore ?? undefined;
+  // Only forward the scope to the backend if it looks like a real persistence
+  // id (CUID2 is ~25 chars, lower-case alphanumeric, starts with "c"). The
+  // local scope store can hold seeded mock ids like "node_root" that would
+  // trigger an FK violation on the server.
+  const isPersistenceId = (v?: string | null) =>
+    !!v && /^c[a-z0-9]{20,}$/i.test(v);
+  const effectiveScopeNodeId = isPersistenceId(scopeNodeId)
+    ? scopeNodeId
+    : isPersistenceId(scopedNodeFromStore)
+      ? scopedNodeFromStore
+      : undefined;
 
   const onDrop = useCallback(
     (accepted: File[], rejected: FileRejection[]) => {
