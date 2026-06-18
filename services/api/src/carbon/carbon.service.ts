@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Decimal } from 'decimal.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -223,33 +223,37 @@ export class CarbonService {
    * tCO2e reduction, sorted ascending.
    */
   async macc(tenantId: string) {
+    // Schema columns: capex, opex, expectedAnnualReductionTco2,
+    // expectedLifetimeYears, marginalAbatementCost.
     const projects: {
       id: string;
       name: string;
-      annualAbatementTco2e: Decimal;
-      capexUsd: Decimal;
-      annualOpexDeltaUsd: Decimal | null;
-      lifetimeYears: number | null;
-      discountRate: Decimal | null;
+      capex: Decimal;
+      opex: Decimal;
+      expectedAnnualReductionTco2: Decimal;
+      expectedLifetimeYears: number;
+      marginalAbatementCost: Decimal;
     }[] = await (this.prisma as any).abatementProject.findMany({
       where: { tenantId },
     });
     const items = projects.map((p) => {
-      const r = p.discountRate ? new Decimal(p.discountRate).div(100) : new Decimal(0.08);
-      const n = p.lifetimeYears ?? 10;
+      const r = new Decimal(0.08); // default discount rate; not in schema
+      const n = p.expectedLifetimeYears ?? 10;
       const annuityFactor = r.isZero()
         ? new Decimal(n)
-        : new Decimal(1).minus(new Decimal(1).plus(r).pow(-n)).div(r); // (1-(1+r)^-n)/r
-      const annualisedCapex = annuityFactor.isZero() ? new Decimal(p.capexUsd) : new Decimal(p.capexUsd).div(annuityFactor);
-      const totalAnnualCost = annualisedCapex.plus(p.annualOpexDeltaUsd ?? 0);
-      const abatement = new Decimal(p.annualAbatementTco2e);
+        : new Decimal(1).minus(new Decimal(1).plus(r).pow(-n)).div(r);
+      const annualisedCapex = annuityFactor.isZero()
+        ? new Decimal(p.capex)
+        : new Decimal(p.capex).div(annuityFactor);
+      const totalAnnualCost = annualisedCapex.plus(p.opex ?? 0);
+      const abatement = new Decimal(p.expectedAnnualReductionTco2);
       const costPerTonne = abatement.isZero() ? new Decimal(0) : totalAnnualCost.div(abatement);
       return {
         id: p.id,
         name: p.name,
         annualAbatementTco2e: abatement.toNumber(),
         costPerTonneUsd: costPerTonne.toNumber(),
-        capexUsd: new Decimal(p.capexUsd).toNumber(),
+        capexUsd: new Decimal(p.capex).toNumber(),
       };
     });
     items.sort((a, b) => a.costPerTonneUsd - b.costPerTonneUsd);
@@ -263,7 +267,24 @@ export class CarbonService {
   }
 
   async createCredit(tenantId: string, dto: CreateCarbonCreditDto, actorId: string) {
-    const c = await (this.prisma as any).carbonCredit.create({ data: { ...dto, tenantId } });
+    // Schema columns: registry (CreditRegistry enum), serialNumber, vintage,
+    // projectName, quantityTco2, pricePerTco2. DTO names differ.
+    const validRegistries = new Set(['VERRA', 'GOLD_STANDARD', 'CAR', 'ART_TREES']);
+    const registry = dto.registry?.toUpperCase();
+    if (!registry || !validRegistries.has(registry)) {
+      throw new BadRequestException(`Unknown carbon registry: ${dto.registry}`);
+    }
+    const c = await (this.prisma as any).carbonCredit.create({
+      data: {
+        tenantId,
+        registry: registry as any,
+        serialNumber: dto.serial,
+        vintage: dto.vintage,
+        projectName: dto.projectType ?? dto.serial,
+        quantityTco2: dto.quantityTco2e,
+        pricePerTco2: dto.pricePerTco2eUsd,
+      },
+    });
     await this.audit.log({
       tenantId,
       userId: actorId,
@@ -278,13 +299,19 @@ export class CarbonService {
   async updateCredit(tenantId: string, id: string, dto: UpdateCarbonCreditDto, actorId: string) {
     const before = await (this.prisma as any).carbonCredit.findFirst({ where: { id, tenantId } });
     if (!before) throw new NotFoundException('Credit not found');
-    const updated = await (this.prisma as any).carbonCredit.update({ where: { id }, data: dto });
+    const data: Record<string, unknown> = {};
+    if (dto.serial !== undefined) data.serialNumber = dto.serial;
+    if (dto.vintage !== undefined) data.vintage = dto.vintage;
+    if (dto.projectType !== undefined) data.projectName = dto.projectType;
+    if (dto.quantityTco2e !== undefined) data.quantityTco2 = dto.quantityTco2e;
+    if (dto.pricePerTco2eUsd !== undefined) data.pricePerTco2 = dto.pricePerTco2eUsd;
+    const updated = await (this.prisma as any).carbonCredit.update({ where: { id }, data });
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'CarbonCredit',
       entityId: id,
-      action: 'update',
+      action: 'UPDATE',
       before,
       after: updated,
     });
@@ -316,11 +343,10 @@ export class CarbonService {
     const target: {
       baselineYear: number;
       targetYear: number;
-      reductionPercent: Decimal;
-      scopes: string[];
+      targetReductionPct: number;
     } | null = await (this.prisma as any).sbtiTarget.findFirst({
       where: { tenantId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: 'desc' },
     });
     if (!target) return { pathway: [], message: 'No SBTi target set' };
 
@@ -336,7 +362,7 @@ export class CarbonService {
     });
     const baseline = baselineEvents.reduce((a, e) => a.plus(e.value), new Decimal(0));
 
-    const targetEmissions = baseline.times(new Decimal(1).minus(new Decimal(target.reductionPercent).div(100)));
+    const targetEmissions = baseline.times(new Decimal(1).minus(new Decimal(target.targetReductionPct).div(100)));
     const years = target.targetYear - target.baselineYear;
     const annualReduction = years > 0 ? baseline.minus(targetEmissions).div(years) : new Decimal(0);
 

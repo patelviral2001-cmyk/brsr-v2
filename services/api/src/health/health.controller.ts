@@ -78,13 +78,33 @@ export class HealthController {
   @Get('ready')
   @ApiOperation({ summary: 'Kubernetes-style readiness probe (deps reachable)' })
   async ready() {
-    const [db, redis] = await Promise.all([this.checkDb(), this.checkRedis()]);
-    const ok = db && redis;
-    if (!ok) {
-      // Mirror k8s convention: 503 when not ready so the LB drains us.
-      throw new ServiceUnavailableException({ status: 'not_ready', checks: { db, redis } });
+    // Bounded timeouts so a single slow dep can't pin the readiness check —
+    // every probe gets its own deadline.
+    const [db, redis, s3, ai] = await Promise.all([
+      this.withTimeout(this.checkDb(), 1500, false),
+      this.withTimeout(this.checkRedis(), 1500, false),
+      this.withTimeout(this.s3.health().catch(() => false), 2000, false),
+      this.withTimeout(this.checkAi(), 2000, false),
+    ]);
+    // db + redis are hard dependencies — without either we cannot serve.
+    // s3 + ai are soft: surface as degraded rather than removing from rotation,
+    // because reads of cached data still work.
+    const critical = db && redis;
+    if (!critical) {
+      throw new ServiceUnavailableException({ status: 'not_ready', checks: { db, redis, s3, ai } });
     }
-    return { status: 'ok', checks: { db, redis } };
+    const degraded = !(s3 && ai);
+    return {
+      status: degraded ? 'degraded' : 'ok',
+      checks: { db, redis, s3, ai },
+    };
+  }
+
+  private withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+    return Promise.race([
+      p,
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
   }
 
   private async checkDb(): Promise<boolean> {

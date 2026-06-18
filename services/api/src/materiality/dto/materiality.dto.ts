@@ -34,7 +34,7 @@ export class CreateTopicDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'Category (e.g. Environment/Social/Governance)' })
+  @ApiProperty({ description: 'Category — must be ENVIRONMENT|SOCIAL|GOVERNANCE', enum: ['ENVIRONMENT', 'SOCIAL', 'GOVERNANCE'] })
   @IsString()
   category!: string;
 

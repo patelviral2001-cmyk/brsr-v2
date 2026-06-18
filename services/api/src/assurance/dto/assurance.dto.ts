@@ -56,11 +56,14 @@ export class SampleSnapshotDto {
   canonicalKey?: string;
 }
 
+/**
+ * Mirrors AuditExceptionSeverity in schema.prisma — only LOW|MEDIUM|HIGH.
+ * (CRITICAL was removed; surface as HIGH with a metadata flag in the call site.)
+ */
 export enum ExceptionSeverity {
   LOW = 'LOW',
   MEDIUM = 'MEDIUM',
   HIGH = 'HIGH',
-  CRITICAL = 'CRITICAL',
 }
 
 export class CreateExceptionDto {
@@ -68,17 +71,19 @@ export class CreateExceptionDto {
   @IsString()
   snapshotId!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  metricEventId!: string;
+  metricEventId?: string;
 
   @ApiProperty({ enum: ExceptionSeverity })
   @IsEnum(ExceptionSeverity)
   severity!: ExceptionSeverity;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  title!: string;
+  title?: string;
 
   @ApiProperty()
   @IsString()
