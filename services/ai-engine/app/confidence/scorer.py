@@ -120,12 +120,20 @@ class ConfidenceScorer:
         if sibling_values:
             comp.cross_source = float(self._agreement_score(field.value_canonical, list(sibling_values)))
 
+        # 6) validation_score — derived from declarative rules engine's
+        # validation_issues attached to the field. Keep whatever the rules
+        # engine put there; default 1.0 when no issues are present.
+        from app.validation.rules_engine import RuleEngine
+
+        comp.validation_score = RuleEngine.validation_score(field)
+
         # Sanitise every component (catches NaN/inf/out-of-range from any path).
         comp.model_logprob = _sanitize_component(comp.model_logprob)
         comp.cross_validation = _sanitize_component(comp.cross_validation)
         comp.peer_zscore = _sanitize_component(comp.peer_zscore)
         comp.schema_validation = _sanitize_component(comp.schema_validation)
         comp.cross_source = _sanitize_component(comp.cross_source)
+        comp.validation_score = _sanitize_component(comp.validation_score)
 
         # Composite + level
         field.confidence_components = comp
@@ -139,6 +147,7 @@ class ConfidenceScorer:
             or comp.schema_validation < 0.55
             or comp.peer_zscore < 0.4
             or comp.cross_source < 0.55
+            or comp.validation_score < 0.55
         ):
             field.needs_review = True
 
@@ -173,11 +182,14 @@ class ConfidenceScorer:
     # ------------------------------------------------------------------
     @staticmethod
     def _composite(c: ConfidenceComponents) -> float:
-        """Geometric mean of the five sanitised components.
+        """Geometric mean of the six sanitised components.
 
         Returns a value bounded in ``[COMPONENT_FLOOR, 1.0]`` and rounded
         to 4 decimal places. NaN is never returned — sanitisation upstream
         guarantees finite inputs and we re-clamp the output for safety.
+
+        ``validation_score`` is included when present (default 1.0 makes
+        it a no-op for fields the rules engine never touched).
         """
         vals = [
             max(_sanitize_component(c.model_logprob), COMPONENT_FLOOR),
@@ -185,14 +197,16 @@ class ConfidenceScorer:
             max(_sanitize_component(c.peer_zscore), COMPONENT_FLOOR),
             max(_sanitize_component(c.schema_validation), COMPONENT_FLOOR),
             max(_sanitize_component(c.cross_source), COMPONENT_FLOOR),
+            max(_sanitize_component(c.validation_score), COMPONENT_FLOOR),
         ]
-        # a * b * c * d * e (explicit per the docstring)
-        prod = vals[0] * vals[1] * vals[2] * vals[3] * vals[4]
+        prod = 1.0
+        for v in vals:
+            prod *= v
         if prod <= 0 or math.isnan(prod) or math.isinf(prod):
             # Defensive: shouldn't trigger after sanitisation, but never let
             # the caller see NaN.
             return COMPONENT_FLOOR
-        composite = prod ** (1 / 5)
+        composite = prod ** (1 / len(vals))
         # Final clamp + round.
         composite = max(0.0, min(1.0, composite))
         return round(composite, 4)

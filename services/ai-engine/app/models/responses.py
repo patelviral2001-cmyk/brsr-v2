@@ -40,6 +40,10 @@ class ConfidenceComponents(BaseModel):
     peer_zscore: float = Field(1.0, ge=0.0, le=1.0)
     schema_validation: float = Field(1.0, ge=0.0, le=1.0)
     cross_source: float = Field(1.0, ge=0.0, le=1.0)
+    # Populated by the declarative rules engine. 1.0 = clean, 0.5 = 1 ERROR,
+    # 0.0 = ≥2 ERRORs. WARN rules surface in field.validation_issues but do
+    # not directly drop this component.
+    validation_score: float = Field(1.0, ge=0.0, le=1.0)
 
 
 class ExtractedField(BaseModel):

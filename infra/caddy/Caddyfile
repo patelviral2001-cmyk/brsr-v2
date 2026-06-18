@@ -46,6 +46,13 @@
 		-Server
 	}
 
+	# ---- Top-level /health alias → /v1/health on the API ---------------
+	# So health probes (and external monitoring) can hit a stable URL.
+	handle_path /health {
+		rewrite * /v1/health
+		reverse_proxy api:4000
+	}
+
 	# ---- API + GraphQL + public health ---------------------------------
 	@api {
 		path /api/v1/* /api/v1 /graphql /graphql/* /v1/health /v1/health/* /metrics-prom

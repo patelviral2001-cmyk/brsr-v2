@@ -53,6 +53,7 @@ from app.models.responses import (
     ExtractedField,
 )
 from app.rag.indexer import RagIndexer
+from app.validation import RuleEngine, ValidationContext, ValidationContextLoader
 from app.utils.guardrails import (
     CostBudgetExceeded,
     DailyBudgetExceeded,
@@ -219,6 +220,8 @@ class DocumentOrchestrator:
         self.entity_agent = EntityExtractionAgent()
         self.scorer = ConfidenceScorer()
         self.indexer = RagIndexer()
+        self.rule_engine = RuleEngine()
+        self.context_loader = ValidationContextLoader()
 
     # ------------------------------------------------------------------
     # Public — used by routers
@@ -445,6 +448,38 @@ class DocumentOrchestrator:
             for f in fields:
                 if f.model_used:
                     model_used = f.model_used
+
+            # 5b. Post-extraction validation pass — declarative rules engine.
+            # Failures attach to field.validation_issues and trip needs_review;
+            # confidence scoring (next step) reads validation_score off the
+            # component bundle.
+            if fields:
+                try:
+                    val_ctx = await self.context_loader.load(
+                        tenant_id=req.tenant_id,
+                        fields=fields,
+                        doc_type=response.doc_type_detected,
+                    )
+                    val_result = self.rule_engine.evaluate_all(fields, val_ctx)
+                    fields = val_result.revised_fields
+                    for issue in val_result.issues:
+                        response.errors.append(
+                            ExtractError(
+                                stage="validation_rules",
+                                code=issue.code,
+                                message=f"[{issue.severity}] {issue.message}",
+                                detail={
+                                    "canonical_key": issue.canonical_key,
+                                    **(issue.detail or {}),
+                                },
+                            )
+                        )
+                except Exception as e:  # noqa: BLE001 — never let validation crash extraction
+                    logger.warning(
+                        "validation.rules_engine_failed",
+                        err=redact_pii(str(e)),
+                        file=req.file_id,
+                    )
 
             # 6. Confidence scoring
             fields = self.scorer.score_many(fields)

@@ -26,6 +26,7 @@ from app.models.responses import (
 )
 from app.registry import get_metric
 from app.utils.logging import get_logger
+from app.validation import RuleEngine, ValidationContext
 
 logger = get_logger("agents.validator")
 
@@ -72,6 +73,7 @@ _SECTOR_BENCHMARKS: dict[str, dict[str, tuple[float, float]]] = {
 class ValidationAgent:
     def __init__(self) -> None:
         self.router = get_router()
+        self.rule_engine = RuleEngine()
 
     async def validate(
         self,
