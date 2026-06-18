@@ -71,6 +71,69 @@ async function main() {
     console.log(`  ⚠ Entity create skipped: ${e}`);
   }
 
+  // 4. Grant demo user a GROUP_ADMIN-style role with broad permissions so
+  //    they can exercise the full UI for demo purposes.
+  try {
+    const role = await (prisma as any).role.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name: 'GROUP_ADMIN' } },
+      update: {
+        permissions: [
+          'user.read', 'user.invite', 'user.update', 'user.deactivate',
+          'role.read', 'role.create', 'role.assign',
+          'tenant.read', 'tenant.update', 'tenant.setting.read', 'tenant.setting.update',
+          'hierarchy.read', 'hierarchy.write',
+          'materiality.read', 'materiality.write',
+          'file.read', 'file.write', 'file.upload', 'file.reprocess',
+          'metric.read', 'metric.write', 'metric.submit', 'metric.approve', 'metric.lock',
+          'extraction.read', 'extraction.write',
+          'calc.read', 'calc.run', 'calc.write',
+          'brsr.read', 'brsr.resolve', 'brsr.generate',
+          'report.read', 'report.write', 'report.approve', 'report.file',
+          'supplier.read', 'supplier.write',
+          'carbon.read', 'carbon.write',
+          'assurance.read', 'assurance.write',
+          'audit.read', 'audit.export',
+          'copilot.use',
+        ],
+      },
+      create: {
+        tenantId: tenant.id,
+        name: 'GROUP_ADMIN',
+        description: 'Full administrative access for the demo tenant.',
+        isSystem: true,
+        permissions: [
+          'user.read', 'user.invite', 'user.update', 'user.deactivate',
+          'role.read', 'role.create', 'role.assign',
+          'tenant.read', 'tenant.update', 'tenant.setting.read', 'tenant.setting.update',
+          'hierarchy.read', 'hierarchy.write',
+          'materiality.read', 'materiality.write',
+          'file.read', 'file.write', 'file.upload', 'file.reprocess',
+          'metric.read', 'metric.write', 'metric.submit', 'metric.approve', 'metric.lock',
+          'extraction.read', 'extraction.write',
+          'calc.read', 'calc.run', 'calc.write',
+          'brsr.read', 'brsr.resolve', 'brsr.generate',
+          'report.read', 'report.write', 'report.approve', 'report.file',
+          'supplier.read', 'supplier.write',
+          'carbon.read', 'carbon.write',
+          'assurance.read', 'assurance.write',
+          'audit.read', 'audit.export',
+          'copilot.use',
+        ],
+      },
+    });
+    const existing = await (prisma as any).roleAssignment.findFirst({
+      where: { userId: user.id, roleId: role.id },
+    });
+    if (!existing) {
+      await (prisma as any).roleAssignment.create({
+        data: { userId: user.id, roleId: role.id, grantedBy: user.id },
+      });
+    }
+    console.log(`  ✓ Role: ${role.name} (${role.permissions.length} permissions) assigned`);
+  } catch (e) {
+    console.log(`  ⚠ Role create/assign skipped: ${e}`);
+  }
+
   console.log('\nDone! Login at https://srv1763596.hstgr.cloud/login');
   console.log('  Email:    demo@imaginepowertree.com');
   console.log('  Password: Demo@1234');

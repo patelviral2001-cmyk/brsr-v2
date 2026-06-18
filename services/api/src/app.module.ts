@@ -12,7 +12,7 @@ import { join } from 'path';
 
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
-import { MetricsModule } from './common/metrics/metrics.module';
+import { MetricsModule as PromMetricsModule } from './common/metrics/metrics.module';
 
 import { IamModule } from './iam/iam.module';
 import { TenantsModule } from './tenants/tenants.module';
@@ -91,7 +91,7 @@ import { configValidationSchema } from './config/config.schema';
 
     PrismaModule,
     CommonModule,
-    MetricsModule,
+    PromMetricsModule,
 
     // Feature modules
     IamModule,
