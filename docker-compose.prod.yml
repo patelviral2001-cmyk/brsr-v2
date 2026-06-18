@@ -238,6 +238,7 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-stub}
       COPILOT_URL: ${COPILOT_URL:-http://localhost:8101}
       OPA_URL: ${OPA_URL:-http://localhost:8181}
+      OPA_ENABLED: ${OPA_ENABLED:-false}
     volumes:
       - ./data/uploads:/app/data/uploads
     expose:
