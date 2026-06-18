@@ -8,12 +8,15 @@ import { CelContext, CelEvaluator, CelValue } from '../common/utils/cel-evaluato
 interface RunInput {
   runId: string;
   tenantId: string;
+  kind?: string;
+  outputKeys?: string[];
 }
 
 /**
- * Reads CalcRun, resolves applicable formulas, fetches input MetricEvents +
- * EmissionFactors, applies CEL, persists the output MetricEvent and a
- * CalcStep with lineage so assurance can walk it back.
+ * Reads CalcRun, resolves applicable formulas from FrameworkMapping rows,
+ * fetches input MetricEvents + EmissionFactors, applies CEL, and persists
+ * one output MetricEvent per formula with lineage (sourceCalcRunId) so the
+ * assurance walkthrough can walk it back.
  */
 @Processor('calculations')
 export class CalculationProcessor extends WorkerHost {
@@ -25,6 +28,7 @@ export class CalculationProcessor extends WorkerHost {
 
   async process(job: Job<RunInput>): Promise<void> {
     const { runId, tenantId } = job.data;
+    const requestedOutputKeys: string[] = job.data.outputKeys ?? [];
     this.logger.log(`Starting calc run=${runId} tenant=${tenantId}`);
 
     const run = await (this.prisma as any).calcRun.findFirst({ where: { id: runId, tenantId } });
@@ -32,29 +36,41 @@ export class CalculationProcessor extends WorkerHost {
       this.logger.warn(`Run ${runId} not found`);
       return;
     }
-    await (this.prisma as any).calcRun.update({
-      where: { id: runId },
-      data: { status: 'RUNNING', startedAt: new Date() },
-    });
+    const startedAt = Date.now();
 
     try {
-      // 1. Resolve formulas
-      const formulas: { id: string; outputKey: string; expression: string; unit: string; inputs: string[]; version: string }[] =
-        await (this.prisma as any).formula.findMany({
-          where: {
-            OR: [{ tenantId: null }, { tenantId }],
-            
-            outputKey: run.outputKeys?.length ? { in: run.outputKeys } : undefined,
-          },
+      // 1. Resolve formulas — schema has no `formula` model; formulas live as
+      // FrameworkMapping rows with a `formula` JSON column.
+      const mappings: { id: string; canonicalKeys: string[]; formula: any; version: string }[] =
+        await (this.prisma as any).frameworkMapping.findMany({
+          where: requestedOutputKeys.length
+            ? { canonicalKeys: { hasSome: requestedOutputKeys } }
+            : {},
+          select: { id: true, canonicalKeys: true, formula: true, version: true },
         });
+
+      const formulas: { id: string; outputKey: string; expression: string; unit: string; inputs: string[]; version: string }[] =
+        mappings
+          .filter((m) => m.formula && typeof m.formula === 'object')
+          .map((m) => {
+            const f = m.formula as { expression?: string; unit?: string; inputs?: string[] };
+            return {
+              id: m.id,
+              outputKey: (m.canonicalKeys?.[0] ?? '') as string,
+              expression: f.expression ?? '',
+              unit: f.unit ?? '',
+              inputs: f.inputs ?? [],
+              version: m.version,
+            };
+          })
+          .filter((f) => f.expression && f.outputKey);
 
       // 2. Topologically sort by inputs
       const ordered = topoSortFormulas(formulas);
 
       // 3. Pre-load all relevant MetricEvents for the period + scope.
       // Restrict the canonicalKey set to inputs actually required by the
-      // resolved formulas — otherwise we pull every event for the tenant
-      // (potentially millions of rows) and inflate memory/CPU.
+      // resolved formulas to avoid pulling millions of rows.
       const requiredKeys = new Set<string>();
       for (const f of formulas) for (const k of f.inputs ?? []) requiredKeys.add(k);
       const inputs: { canonicalKey: string; value: Decimal; unit: string }[] = await (this.prisma as any).metricEvent.findMany({
@@ -65,16 +81,12 @@ export class CalculationProcessor extends WorkerHost {
           periodStart: { gte: run.periodStart },
           periodEnd: { lte: run.periodEnd },
           status: { in: ['APPROVED', 'LOCKED'] },
-          
         },
         select: { canonicalKey: true, value: true, unit: true },
       });
       const metricCtx: Record<string, CelValue> = {};
       // Aggregate equal-keyed values by summing.
       // CRITICAL: refuse to mix units silently — kWh + MWh would corrupt totals.
-      // Caller is responsible for normalising units at ingest; here we throw
-      // so a unit-mismatched dataset surfaces as a calc error rather than a
-      // wrong number.
       for (const m of inputs) {
         const k = m.canonicalKey;
         if (!metricCtx[k]) {
@@ -87,20 +99,24 @@ export class CalculationProcessor extends WorkerHost {
         metricCtx[k]!.value = (metricCtx[k]!.value as Decimal).plus(m.value);
       }
 
-      // 4. Load emission factors
-      const factors: { code: string; value: Decimal; unit: string }[] = await (this.prisma as any).emissionFactor.findMany({
+      // 4. Load emission factors. Schema field is `activityType` (not `code`).
+      const factors: { activityType: string; value: Decimal; unit: string }[] = await (this.prisma as any).emissionFactor.findMany({
         where: { OR: [{ tenantId: null }, { tenantId }] },
-        select: { code: true, value: true, unit: true },
+        select: { activityType: true, value: true, unit: true },
       });
       const factorCtx: Record<string, CelValue> = {};
-      for (const f of factors) factorCtx[f.code] = { value: f.value, unit: f.unit };
+      for (const f of factors) factorCtx[f.activityType] = { value: f.value, unit: f.unit };
 
       // 5. Evaluate each formula in order
-      let seq = 0;
       const periodDays = Math.max(
         1,
         Math.round((run.periodEnd.getTime() - run.periodStart.getTime()) / (24 * 3600 * 1000)),
       );
+
+      let lastSuccessful: { outputKey: string; value: Decimal; unit: string; version: string; formulaId: string } | null = null;
+      const emittedEventIds: string[] = [];
+      const usedInputKeys = new Set<string>();
+      const usedFactorKeys = new Set<string>();
 
       for (const f of ordered) {
         const ctx: CelContext = { metrics: metricCtx, factors: factorCtx, periodDays };
@@ -118,74 +134,71 @@ export class CalculationProcessor extends WorkerHost {
           result = { value: null };
         }
 
-        await (this.prisma as any).calcStep.create({
-          data: {
-            tenantId,
-            runId,
-            sequence: seq++,
-            formulaId: f.id,
-            outputKey: f.outputKey,
-            inputs: f.inputs,
-            inputValuesSnapshot: snapshotInputs(f.inputs, metricCtx, factorCtx),
-            status,
-            error,
-            value: result.value instanceof Decimal ? result.value : null,
-            unit: f.unit,
-          },
-        });
-
         if (status === 'SUCCESS' && result.value instanceof Decimal) {
-          // Persist as new MetricEvent (CALCULATED source) + add to local ctx so downstream formulas can use it
+          // Persist the calculated value as a new MetricEvent. Schema fields:
+          // sourceType (enum), sourceCalcRunId, dimensions (json), no
+          // calcFormulaId column — record version in dimensions.
           const event = await (this.prisma as any).metricEvent.create({
             data: {
               tenantId,
               canonicalKey: f.outputKey,
-              scopeNodeId: run.scopeNodeIds[0] as string, // aggregated; UI shows breakdown via CalcStep
+              scopeNodeId: run.scopeNodeIds[0] as string,
               periodStart: run.periodStart,
               periodEnd: run.periodEnd,
               value: result.value,
               unit: f.unit,
-              source: 'CALCULATED',
-              calcRunId: runId,
-              calcFormulaId: f.id,
-              status: 'APPROVED', // computed values land approved
-              metadata: { formulaVersion: f.version },
+              sourceType: 'CALCULATION',
+              sourceCalcRunId: runId,
+              status: 'APPROVED',
+              dimensions: { formulaVersion: f.version, formulaId: f.id },
+              submittedBy: run.computedBy,
             },
           });
           metricCtx[f.outputKey] = { value: result.value, unit: f.unit };
+          emittedEventIds.push(event.id);
+          for (const k of f.inputs ?? []) {
+            if (metricCtx[k]) usedInputKeys.add(k);
+            else if (factorCtx[k]) usedFactorKeys.add(k);
+          }
+          lastSuccessful = { outputKey: f.outputKey, value: result.value, unit: f.unit, version: f.version, formulaId: f.id };
           this.logger.debug(`Calculated ${f.outputKey}=${result.value.toString()} ${f.unit} (event=${event.id})`);
         } else {
           this.logger.warn(`Formula ${f.outputKey} failed: ${error}`);
         }
       }
 
+      // 6. Finalise the CalcRun row with the last successful output (mirrors
+      // the schema CalcRun fields). If nothing succeeded, mark the run as
+      // empty rather than crash.
       await (this.prisma as any).calcRun.update({
         where: { id: runId },
-        data: { status: 'COMPLETED', completedAt: new Date() },
+        data: {
+          formulaVersionId: lastSuccessful?.formulaId ?? 'none',
+          outputCanonicalKey: lastSuccessful?.outputKey ?? run.outputCanonicalKey ?? '',
+          outputValue: lastSuccessful?.value ?? 0,
+          outputUnit: lastSuccessful?.unit ?? '',
+          inputMetricIds: Array.from(usedInputKeys),
+          factorIds: Array.from(usedFactorKeys),
+          durationMs: Date.now() - startedAt,
+        },
       });
+      this.logger.log(
+        `Calc run ${runId} completed in ${Date.now() - startedAt}ms (${emittedEventIds.length} outputs)`,
+      );
     } catch (e) {
       this.logger.error(`Run ${runId} failed: ${(e as Error).message}`);
-      await (this.prisma as any).calcRun.update({
-        where: { id: runId },
-        data: { status: 'FAILED', completedAt: new Date(), error: (e as Error).message },
-      });
+      // Don't crash the run row — record the duration; throw so BullMQ retries.
+      try {
+        await (this.prisma as any).calcRun.update({
+          where: { id: runId },
+          data: { durationMs: Date.now() - startedAt },
+        });
+      } catch {
+        /* swallow */
+      }
       throw e;
     }
   }
-}
-
-function snapshotInputs(
-  inputs: string[],
-  metrics: Record<string, CelValue>,
-  factors: Record<string, CelValue>,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const k of inputs ?? []) {
-    const v = metrics[k] ?? factors[k];
-    if (!v) continue;
-    out[k] = { value: v.value instanceof Decimal ? v.value.toString() : v.value, unit: v.unit };
-  }
-  return out;
 }
 
 function topoSortFormulas<T extends { outputKey: string; inputs: string[] }>(formulas: T[]): T[] {

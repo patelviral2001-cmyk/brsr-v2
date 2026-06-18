@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { BullModule } from '@nestjs/bullmq';
 import { ScheduleModule } from '@nestjs/schedule';
 import { HttpModule } from '@nestjs/axios';
@@ -12,6 +12,7 @@ import { join } from 'path';
 
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
+import { MetricsModule } from './common/metrics/metrics.module';
 
 import { IamModule } from './iam/iam.module';
 import { TenantsModule } from './tenants/tenants.module';
@@ -34,6 +35,7 @@ import { DashboardGraphqlModule } from './graphql/dashboard.graphql.module';
 import { WorkflowModule } from './workflow/workflow.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { MetricsInterceptor } from './common/metrics/metrics.interceptor';
 import { configValidationSchema } from './config/config.schema';
 
 @Module({
@@ -89,6 +91,7 @@ import { configValidationSchema } from './config/config.schema';
 
     PrismaModule,
     CommonModule,
+    MetricsModule,
 
     // Feature modules
     IamModule,
@@ -114,6 +117,7 @@ import { configValidationSchema } from './config/config.schema';
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
   ],
 })
 export class AppModule {}

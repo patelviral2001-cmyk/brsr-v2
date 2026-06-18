@@ -1,17 +1,50 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/page-header";
+import { EmptyState } from "@/components/common/empty-state";
+import { PageSkeleton } from "@/components/common/loading-skeleton";
 import { FormulaDisplay } from "@/components/brsr/formula-display";
 import { useCalculation } from "@/lib/api/queries";
 import { formatNumber, formatDateTime } from "@/lib/format";
+import { AlertTriangle, Calculator } from "lucide-react";
 
 export default function CalculationRunPage() {
   const params = useParams();
   const id = String(params?.runId ?? "");
-  const { data: run } = useCalculation(id);
+  const { data: run, isLoading, isError, error, refetch } = useCalculation(id);
+
+  if (isLoading) return (<div className="p-6"><PageHeader title="Loading calculation…" /><PageSkeleton /></div>);
+  if (isError) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Calculation" />
+        <EmptyState
+          icon={<AlertTriangle className="h-6 w-6" />}
+          title="Couldn't load calculation"
+          description={error instanceof Error ? error.message : "Please try again."}
+          action={<Button onClick={() => refetch()}>Try again</Button>}
+        />
+      </div>
+    );
+  }
+  if (!run) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Calculation not found" />
+        <EmptyState
+          icon={<Calculator className="h-6 w-6" />}
+          title={`No run with id "${id}"`}
+          description="It may have been pruned, or you may not have access."
+          action={<Button asChild><Link href="/calculations">Back to calculations</Link></Button>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-5">

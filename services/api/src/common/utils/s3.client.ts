@@ -63,10 +63,31 @@ export class S3Storage {
     await this.client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
   }
 
-  async presignGet(bucket: string, key: string, ttlSeconds = 900): Promise<string> {
-    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: bucket, Key: key }), {
-      expiresIn: ttlSeconds,
-    });
+  /**
+   * Generates a presigned GET URL. When `downloadFilename` is supplied we set
+   * `ResponseContentDisposition: attachment; filename="…"` so the browser
+   * downloads rather than renders inline (defence against stored XSS in
+   * uploaded HTML/SVG and similar content-sniffing tricks).
+   */
+  async presignGet(
+    bucket: string,
+    key: string,
+    ttlSeconds = 900,
+    downloadFilename?: string,
+  ): Promise<string> {
+    return getSignedUrl(
+      this.client,
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        ...(downloadFilename
+          ? {
+              ResponseContentDisposition: `attachment; filename="${downloadFilename.replace(/"/g, '')}"`,
+            }
+          : {}),
+      }),
+      { expiresIn: ttlSeconds },
+    );
   }
 
   async presignPut(bucket: string, key: string, ttlSeconds = 900, contentType?: string): Promise<string> {

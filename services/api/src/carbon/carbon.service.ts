@@ -64,17 +64,42 @@ export class CarbonService {
   // ---- SBTi targets ----
 
   async listSbti(tenantId: string) {
-    return (this.prisma as any).sbtiTarget.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' } });
+    // Schema SbtiTarget has no createdAt column; order by id desc.
+    return (this.prisma as any).sbtiTarget.findMany({ where: { tenantId }, orderBy: { id: 'desc' } });
+  }
+
+  /**
+   * Maps the DTO (type/baselineYear/targetYear/reductionPercent/scopes[]) onto
+   * the schema columns (scope (SbtiScope enum), baselineYear, baselineValue,
+   * targetYear, targetReductionPct).
+   */
+  private toSbtiCreate(dto: CreateSbtiTargetDto) {
+    // Map scopes[] -> schema SbtiScope enum. Choose the broadest covered scope.
+    const scopes = (dto.scopes ?? []).map((s) => s.toUpperCase());
+    let scope = 'S1_S2';
+    if (scopes.includes('S3') || scopes.includes('S1_S2_S3') || scopes.includes('ALL')) scope = 'ALL';
+    else if (scopes.length === 1 && scopes[0] === 'S1') scope = 'S1';
+    else if (scopes.length === 1 && scopes[0] === 'S2') scope = 'S2';
+    else if (scopes.includes('S1') && scopes.includes('S2')) scope = 'S1_S2';
+    return {
+      scope: scope as any,
+      baselineYear: dto.baselineYear,
+      baselineValue: 0,
+      targetYear: dto.targetYear,
+      targetReductionPct: dto.reductionPercent,
+    };
   }
 
   async createSbti(tenantId: string, dto: CreateSbtiTargetDto, actorId: string) {
-    const t = await (this.prisma as any).sbtiTarget.create({ data: { ...dto, tenantId } });
+    const t = await (this.prisma as any).sbtiTarget.create({
+      data: { ...this.toSbtiCreate(dto), tenantId },
+    });
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'SbtiTarget',
       entityId: t.id,
-      action: 'create',
+      action: 'CREATE',
       after: t,
     });
     return t;
@@ -83,13 +108,17 @@ export class CarbonService {
   async updateSbti(tenantId: string, id: string, dto: UpdateSbtiTargetDto, actorId: string) {
     const before = await (this.prisma as any).sbtiTarget.findFirst({ where: { id, tenantId } });
     if (!before) throw new NotFoundException('Target not found');
-    const updated = await (this.prisma as any).sbtiTarget.update({ where: { id }, data: dto });
+    const data: Record<string, unknown> = {};
+    if (dto.baselineYear !== undefined) data.baselineYear = dto.baselineYear;
+    if (dto.targetYear !== undefined) data.targetYear = dto.targetYear;
+    if (dto.reductionPercent !== undefined) data.targetReductionPct = dto.reductionPercent;
+    const updated = await (this.prisma as any).sbtiTarget.update({ where: { id }, data });
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'SbtiTarget',
       entityId: id,
-      action: 'update',
+      action: 'UPDATE',
       before,
       after: updated,
     });
@@ -113,11 +142,34 @@ export class CarbonService {
   // ---- Abatement / MACC ----
 
   async listAbatement(tenantId: string) {
-    return (this.prisma as any).abatementProject.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' } });
+    // Schema AbatementProject has no createdAt; sort by id.
+    return (this.prisma as any).abatementProject.findMany({ where: { tenantId }, orderBy: { id: 'desc' } });
+  }
+
+  private toAbatementCreate(dto: CreateAbatementProjectDto) {
+    // Schema columns: capex, opex, expectedAnnualReductionTco2,
+    // expectedLifetimeYears, marginalAbatementCost, scopeNodeIds[].
+    const lifetimeYears = dto.lifetimeYears ?? 10;
+    const mac =
+      dto.annualAbatementTco2e > 0
+        ? (dto.capexUsd / Math.max(1, lifetimeYears) + (dto.annualOpexDeltaUsd ?? 0)) / dto.annualAbatementTco2e
+        : 0;
+    return {
+      name: dto.name,
+      description: dto.description ?? null,
+      capex: dto.capexUsd,
+      opex: dto.annualOpexDeltaUsd ?? 0,
+      expectedAnnualReductionTco2: dto.annualAbatementTco2e,
+      expectedLifetimeYears: lifetimeYears,
+      marginalAbatementCost: mac,
+      scopeNodeIds: dto.scopeNodeId ? [dto.scopeNodeId] : [],
+    };
   }
 
   async createAbatement(tenantId: string, dto: CreateAbatementProjectDto, actorId: string) {
-    const p = await (this.prisma as any).abatementProject.create({ data: { ...dto, tenantId } });
+    const p = await (this.prisma as any).abatementProject.create({
+      data: { ...this.toAbatementCreate(dto), tenantId },
+    });
     await this.audit.log({
       tenantId,
       userId: actorId,
@@ -132,13 +184,20 @@ export class CarbonService {
   async updateAbatement(tenantId: string, id: string, dto: UpdateAbatementProjectDto, actorId: string) {
     const before = await (this.prisma as any).abatementProject.findFirst({ where: { id, tenantId } });
     if (!before) throw new NotFoundException('Project not found');
-    const updated = await (this.prisma as any).abatementProject.update({ where: { id }, data: dto });
+    const data: Record<string, unknown> = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.capexUsd !== undefined) data.capex = dto.capexUsd;
+    if (dto.annualOpexDeltaUsd !== undefined) data.opex = dto.annualOpexDeltaUsd;
+    if (dto.annualAbatementTco2e !== undefined) data.expectedAnnualReductionTco2 = dto.annualAbatementTco2e;
+    if (dto.lifetimeYears !== undefined) data.expectedLifetimeYears = dto.lifetimeYears;
+    const updated = await (this.prisma as any).abatementProject.update({ where: { id }, data });
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'AbatementProject',
       entityId: id,
-      action: 'update',
+      action: 'UPDATE',
       before,
       after: updated,
     });

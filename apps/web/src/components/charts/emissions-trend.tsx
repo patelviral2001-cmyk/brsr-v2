@@ -11,6 +11,17 @@ interface DataPoint {
 
 export function EmissionsTrendChart({ data }: { data: DataPoint[] }) {
   const safe = Array.isArray(data) ? data : [];
+  if (safe.length === 0) {
+    return (
+      <div
+        className="flex h-[320px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-400"
+        role="img"
+        aria-label="Empty emissions trend chart"
+      >
+        No emissions data to chart yet.
+      </div>
+    );
+  }
   return (
     <ResponsiveContainer width="100%" height={320}>
       <AreaChart data={safe} margin={{ top: 10, right: 12, left: -4, bottom: 0 }}>

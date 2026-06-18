@@ -37,6 +37,31 @@ const ALLOWED_PARENTS: Record<HierarchyNodeType, HierarchyNodeType[] | null> = {
   PRODUCT_LINE: [HierarchyNodeType.BUSINESS_UNIT, HierarchyNodeType.FACILITY],
 };
 
+/**
+ * Maps the public-facing HierarchyNodeType taxonomy (GROUP/COMPANY/...) to
+ * the EntityType enum stored on the schema (GROUP/LEGAL_ENTITY/DIVISION/
+ * SITE/DEPARTMENT). The DTO layer is kept stable for the frontend; this
+ * function is the single bridging point.
+ */
+function mapNodeTypeToEntityType(t: HierarchyNodeType): string {
+  switch (t) {
+    case HierarchyNodeType.GROUP:
+      return 'GROUP';
+    case HierarchyNodeType.COMPANY:
+      return 'LEGAL_ENTITY';
+    case HierarchyNodeType.BUSINESS_UNIT:
+      return 'DIVISION';
+    case HierarchyNodeType.REGION:
+    case HierarchyNodeType.FACILITY:
+      return 'SITE';
+    case HierarchyNodeType.PROCESS:
+    case HierarchyNodeType.PRODUCT_LINE:
+      return 'DEPARTMENT';
+    default:
+      return 'GROUP';
+  }
+}
+
 @Injectable()
 export class HierarchyService {
   private readonly logger = new Logger(HierarchyService.name);
@@ -69,14 +94,21 @@ export class HierarchyService {
       data: {
         tenantId,
         parentId: parent?.id ?? null,
-        type: dto.type,
+        // schema EntityType: GROUP|LEGAL_ENTITY|DIVISION|SITE|DEPARTMENT
+        type: mapNodeTypeToEntityType(dto.type),
         code: dto.code,
         name: dto.name,
         ltreePath,
-        country: dto.country,
-        region: dto.region,
-        latitude: dto.latitude !== undefined ? new Decimal(dto.latitude) : undefined,
-        longitude: dto.longitude !== undefined ? new Decimal(dto.longitude) : undefined,
+        country: dto.country ?? 'IN',
+        state: dto.region,
+        // schema columns are lat / lng (Decimal). DTO carries latitude/longitude
+        // for backward compatibility.
+        lat: dto.latitude !== undefined ? new Decimal(dto.latitude) : undefined,
+        lng: dto.longitude !== undefined ? new Decimal(dto.longitude) : undefined,
+        // Required schema columns with reasonable defaults:
+        consolidationMethod: 'FULL',
+        controlType: 'OPERATIONAL',
+        operationalBoundary: 'OPERATIONAL_CONTROL',
         effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date(),
         effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null,
         metadata: dto.metadata ?? {},
@@ -133,9 +165,9 @@ export class HierarchyService {
       data: {
         name: dto.name,
         country: dto.country,
-        region: dto.region,
-        latitude: dto.latitude !== undefined ? new Decimal(dto.latitude) : undefined,
-        longitude: dto.longitude !== undefined ? new Decimal(dto.longitude) : undefined,
+        state: dto.region,
+        lat: dto.latitude !== undefined ? new Decimal(dto.latitude) : undefined,
+        lng: dto.longitude !== undefined ? new Decimal(dto.longitude) : undefined,
         effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : undefined,
         effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : undefined,
         metadata: dto.metadata,
@@ -208,16 +240,18 @@ export class HierarchyService {
 
   async softDelete(tenantId: string, id: string, actorId: string) {
     const node = await this.findOne(tenantId, id);
+    // EntityNode has no `deletedAt` column. Use effectiveTo to time-bound the
+    // node — queries that respect effectiveTo treat the node as inactive.
     await (this.prisma as any).entityNode.update({
       where: { id },
-      data: { deletedAt: new Date(), effectiveTo: new Date() },
+      data: { effectiveTo: new Date() },
     });
     await this.audit.log({
       tenantId,
       userId: actorId,
-      entity: 'HierarchyNode',
+      entity: 'EntityNode',
       entityId: id,
-      action: 'delete',
+      action: 'DELETE',
       before: node,
     });
   }
@@ -295,12 +329,15 @@ export class HierarchyService {
             data: {
               tenantId,
               parentId: parent?.id ?? null,
-              type: row.type,
+              type: mapNodeTypeToEntityType(row.type),
               code: row.code,
               name: row.name,
               ltreePath,
-              country: row.country,
-              region: row.region,
+              country: row.country ?? 'IN',
+              state: row.region,
+              consolidationMethod: 'FULL',
+              controlType: 'OPERATIONAL',
+              operationalBoundary: 'OPERATIONAL_CONTROL',
               effectiveFrom: new Date(),
             },
           });
@@ -316,10 +353,10 @@ export class HierarchyService {
     await this.audit.log({
       tenantId,
       userId: actorId,
-      entity: 'HierarchyNode',
+      entity: 'EntityNode',
       entityId: null,
-      action: 'bulk_import',
-      metadata: { inserted, errors: errors.length },
+      action: 'CREATE',
+      metadata: { bulkImport: true, inserted, errors: errors.length },
     });
     return { inserted, errors };
   }
@@ -328,15 +365,20 @@ export class HierarchyService {
 
   /**
    * Recursive sum of headcount + revenue over a node and all descendants.
-   * Reads the `nodeMetrics` projection table (denormalised — populated by a
-   * separate processor as MetricEvents land).
+   *
+   * Previously read a non-existent `nodeMetricsSnapshot` projection table.
+   * The actual aggregate lives on EntityNode itself (employeeCount, revenue).
+   * Walk the subtree via ltreePath and sum.
    */
   async rollup(tenantId: string, nodeId: string) {
     const root = await this.findOne(tenantId, nodeId);
-    const rows: { employeeCount: number; revenue: Decimal }[] = await (this.prisma as any).nodeMetricsSnapshot.findMany({
+    const rows: { employeeCount: number | null; revenue: Decimal | null }[] = await (this.prisma as any).entityNode.findMany({
       where: {
         tenantId,
-        ltreePath: { startsWith: root.ltreePath },
+        OR: [
+          { id: nodeId },
+          { ltreePath: { startsWith: `${root.ltreePath}.` } },
+        ],
       },
       select: { employeeCount: true, revenue: true },
     });

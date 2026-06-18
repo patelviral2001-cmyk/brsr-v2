@@ -75,6 +75,21 @@ export const useTenantSettings = (): UseQueryResult<Record<string, unknown>> =>
     retry: DEFAULT_RETRY,
   });
 
+export function useUpdateTenantSettings(): UseMutationResult<
+  Record<string, unknown>,
+  Error,
+  Record<string, unknown>
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch) => apiPatch<Record<string, unknown>>(ENDPOINTS.tenantSettings, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tenant"] });
+      qc.invalidateQueries({ queryKey: ["tenant", "settings"] });
+    },
+  });
+}
+
 export const useUsers = (): UseQueryResult<User[]> =>
   useQuery({
     queryKey: ["users"],

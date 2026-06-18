@@ -28,12 +28,36 @@ async function bootstrap(): Promise<void> {
   // Replace built-in logger with Pino
   app.useLogger(app.get(Logger));
 
-  // Security
-  app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+  // Security — helmet defaults give us X-Content-Type-Options: nosniff,
+  // X-Frame-Options DENY, and (when behind HTTPS) HSTS. We disable Helmet's
+  // CSP because Caddy injects a unified policy at the edge for the HTML pages
+  // — but we add a strict JSON-only CSP so a leaked HTML response would still
+  // refuse to execute scripts. NOTE: CORS_ORIGIN MUST be an explicit list in
+  // production — refuse the '*' wildcard.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'none'"],
+          frameAncestors: ["'none'"],
+          baseUri: ["'none'"],
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: 'same-site' },
+    }),
+  );
 
   // CORS
+  const corsOrigin = process.env.CORS_ORIGIN ?? '';
+  if (process.env.NODE_ENV === 'production' && (corsOrigin === '' || corsOrigin === '*')) {
+    // Refuse to boot in prod with a permissive CORS config.
+    throw new Error(
+      'CORS_ORIGIN must be an explicit comma-separated allowlist in production (wildcard rejected).',
+    );
+  }
   app.enableCors({
-    origin: (process.env.CORS_ORIGIN || '*').split(','),
+    origin: corsOrigin ? corsOrigin.split(',').map((s) => s.trim()).filter(Boolean) : true,
     credentials: true,
     exposedHeaders: ['x-request-id', 'x-trace-id'],
   });

@@ -11,6 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FilesService } from './files.service';
 import { ExtractionCallbackDto, UploadFileDto } from './dto/files.dto';
@@ -31,7 +32,11 @@ import { Audit } from '../common/decorators/audit.decorator';
 export class FilesController {
   constructor(private readonly svc: FilesService) {}
 
+  // Rate-limit uploads aggressively: 100 / minute / client. ThrottlerGuard
+  // uses the IP by default — to scope per-tenant we'd need a custom tracker;
+  // documented in SECURITY_AUDIT.md as a follow-up.
   @Post('upload')
+  @Throttle({ default: { limit: 100, ttl: 60_000 } })
   @UseGuards(AbacGuard)
   @RequirePermissions('file.upload')
   @Audit({ entity: 'Document', action: 'upload' })

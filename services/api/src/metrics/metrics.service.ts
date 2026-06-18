@@ -30,33 +30,76 @@ export class MetricsService {
   // ---- Registry ----
 
   async listRegistry(filter: { category?: string; framework?: string }) {
+    // CanonicalMetric PK is `key`. No `frameworks` array column; the
+    // canonical-to-framework cross-walk lives in FrameworkMapping.
+    if (filter.framework) {
+      const mappings = await (this.prisma as any).frameworkMapping.findMany({
+        where: { framework: filter.framework },
+        select: { canonicalKeys: true },
+      });
+      const keys = Array.from(new Set(mappings.flatMap((m: { canonicalKeys: string[] }) => m.canonicalKeys ?? [])));
+      return (this.prisma as any).canonicalMetric.findMany({
+        where: {
+          key: { in: keys as string[] },
+          category: filter.category as any,
+          isActive: true,
+        },
+        orderBy: { key: 'asc' },
+      });
+    }
     return (this.prisma as any).canonicalMetric.findMany({
-      where: {
-        category: filter.category,
-        frameworks: filter.framework ? { has: filter.framework } : undefined,
-      },
-      orderBy: { canonicalKey: 'asc' },
+      where: { category: filter.category as any, isActive: true },
+      orderBy: { key: 'asc' },
     });
   }
 
   async getRegistry(canonicalKey: string) {
-    const reg = await (this.prisma as any).canonicalMetric.findFirst({
-      where: { canonicalKey },
-      include: { mappings: true },
+    const reg = await (this.prisma as any).canonicalMetric.findUnique({
+      where: { key: canonicalKey },
     });
     if (!reg) throw new NotFoundException('Metric not in registry');
-    return reg;
+    const mappings = await (this.prisma as any).frameworkMapping.findMany({
+      where: { canonicalKeys: { has: canonicalKey } },
+    });
+    return { ...reg, mappings };
   }
 
   // ---- Events ----
 
+  /** Map DTO MetricSource to schema MetricSourceType enum. */
+  private mapSource(s: MetricSource | undefined): string {
+    switch (s) {
+      case MetricSource.EXTRACTED:
+        return 'EXTRACTION';
+      case MetricSource.CALCULATED:
+        return 'CALCULATION';
+      case MetricSource.ERP:
+        return 'API';
+      case MetricSource.IMPORTED:
+      case MetricSource.MANUAL:
+      default:
+        return 'MANUAL';
+    }
+  }
+
   async create(tenantId: string, dto: CreateMetricEventDto, actorId: string) {
-    const reg = await (this.prisma as any).canonicalMetric.findFirst({
-      where: { canonicalKey: dto.canonicalKey },
+    // Validate scope node belongs to this tenant first to avoid leaking via FK.
+    const scope = await (this.prisma as any).entityNode.findFirst({
+      where: { id: dto.scopeNodeId, tenantId },
+      select: { id: true },
+    });
+    if (!scope) throw new BadRequestException('scopeNodeId not found in this tenant');
+
+    const reg = await (this.prisma as any).canonicalMetric.findUnique({
+      where: { key: dto.canonicalKey },
     });
     if (!reg) throw new BadRequestException(`Unknown metric: ${dto.canonicalKey}`);
-    if (reg.unit && reg.unit !== dto.unit) {
-      throw new BadRequestException(`Unit mismatch: expected ${reg.unit}, got ${dto.unit}`);
+    const allowed = (reg.allowedUnits ?? []) as string[];
+    if (reg.canonicalUnit && reg.canonicalUnit !== dto.unit && !allowed.includes(dto.unit)) {
+      throw new BadRequestException(`Unit mismatch: expected ${reg.canonicalUnit}, got ${dto.unit}`);
+    }
+    if (new Date(dto.periodStart) > new Date(dto.periodEnd)) {
+      throw new BadRequestException('periodStart must be <= periodEnd');
     }
 
     const event = await (this.prisma as any).metricEvent.create({
@@ -68,13 +111,12 @@ export class MetricsService {
         periodEnd: new Date(dto.periodEnd),
         value: new Decimal(dto.value),
         unit: dto.unit,
-        source: dto.source ?? MetricSource.MANUAL,
-        documentId: dto.documentId,
-        extractionFieldId: dto.extractionFieldId,
-        notes: dto.notes,
-        metadata: dto.metadata ?? {},
-        status: MetricEventStatus.DRAFT,
-        createdBy: actorId,
+        sourceType: this.mapSource(dto.source),
+        sourceExtractionId: dto.extractionFieldId,
+        comment: dto.notes,
+        dimensions: dto.metadata ?? {},
+        status: MetricEventStatus.DRAFT as any,
+        submittedBy: actorId,
       },
     });
     await this.audit.log({
@@ -108,6 +150,15 @@ export class MetricsService {
     if (![MetricEventStatus.DRAFT, MetricEventStatus.SUBMITTED].includes(e.status)) {
       throw new ConflictException(`Cannot edit a metric in status ${e.status}`);
     }
+    // If caller is moving the metric under a different scope, re-validate
+    // ownership to prevent cross-tenant relinking.
+    if (dto.scopeNodeId && dto.scopeNodeId !== e.scopeNodeId) {
+      const scope = await (this.prisma as any).entityNode.findFirst({
+        where: { id: dto.scopeNodeId, tenantId },
+        select: { id: true },
+      });
+      if (!scope) throw new BadRequestException('scopeNodeId not found in this tenant');
+    }
     const updated = await (this.prisma as any).metricEvent.update({
       where: { id },
       data: {
@@ -116,8 +167,8 @@ export class MetricsService {
         scopeNodeId: dto.scopeNodeId,
         periodStart: dto.periodStart ? new Date(dto.periodStart) : undefined,
         periodEnd: dto.periodEnd ? new Date(dto.periodEnd) : undefined,
-        notes: dto.notes,
-        metadata: dto.metadata,
+        comment: dto.notes,
+        dimensions: dto.metadata,
       },
     });
     await this.audit.log({
@@ -125,7 +176,7 @@ export class MetricsService {
       userId: actorId,
       entity: 'MetricEvent',
       entityId: id,
-      action: 'update',
+      action: 'UPDATE',
       before: e,
       after: updated,
     });
@@ -145,18 +196,21 @@ export class MetricsService {
     if (e.status !== MetricEventStatus.DRAFT) {
       throw new ConflictException(`Cannot submit metric in status ${e.status}`);
     }
+    // Schema MetricStatus enum: DRAFT|SUBMITTED|REVIEWED|APPROVED|LOCKED.
+    // submittedBy is on every row; updated to current actor on transition.
     const updated = await (this.prisma as any).metricEvent.update({
       where: { id },
-      data: { status: MetricEventStatus.SUBMITTED, submittedAt: new Date(), submittedBy: actorId },
+      data: { status: 'SUBMITTED', submittedAt: new Date(), submittedBy: actorId },
     });
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'MetricEvent',
       entityId: id,
-      action: 'submit',
+      action: 'UPDATE',
       before: e,
       after: updated,
+      metadata: { transition: 'SUBMITTED' },
     });
     return updated;
   }
@@ -171,14 +225,14 @@ export class MetricsService {
     }
     const updated = await (this.prisma as any).metricEvent.update({
       where: { id },
-      data: { status: MetricEventStatus.APPROVED, approvedAt: new Date(), approvedBy: actorId },
+      data: { status: 'APPROVED', approvedAt: new Date(), approvedBy: actorId },
     });
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'MetricEvent',
       entityId: id,
-      action: 'approve',
+      action: 'APPROVE',
       before: e,
       after: updated,
     });
@@ -190,13 +244,14 @@ export class MetricsService {
     if (e.status !== MetricEventStatus.SUBMITTED) {
       throw new ConflictException(`Can only reject a SUBMITTED metric`);
     }
+    // Schema has no REJECTED MetricStatus value; the closest is to revert to
+    // DRAFT and record the rejection reason in `comment`. This keeps the
+    // audit trail visible while letting submitters edit and resubmit.
     const updated = await (this.prisma as any).metricEvent.update({
       where: { id },
       data: {
-        status: MetricEventStatus.REJECTED,
-        rejectedAt: new Date(),
-        rejectedBy: actorId,
-        rejectionReason: dto.reason,
+        status: 'DRAFT',
+        comment: `[REJECTED ${new Date().toISOString()} by ${actorId}] ${dto.reason}`,
       },
     });
     await this.audit.log({
@@ -204,7 +259,7 @@ export class MetricsService {
       userId: actorId,
       entity: 'MetricEvent',
       entityId: id,
-      action: 'reject',
+      action: 'REJECT',
       before: e,
       after: updated,
       metadata: { reason: dto.reason },
@@ -219,14 +274,14 @@ export class MetricsService {
     }
     const updated = await (this.prisma as any).metricEvent.update({
       where: { id },
-      data: { status: MetricEventStatus.LOCKED, lockedAt: new Date(), lockedBy: actorId },
+      data: { status: 'LOCKED' },
     });
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'MetricEvent',
       entityId: id,
-      action: 'lock',
+      action: 'LOCK',
       before: e,
       after: updated,
     });
@@ -277,11 +332,11 @@ export class MetricsService {
               periodEnd: new Date(String(data.periodEnd)),
               value: new Decimal(String(data.value)),
               unit: String(data.unit),
-              source: MetricSource.IMPORTED,
-              notes: data.notes ? String(data.notes) : null,
-              metadata: {},
-              status: MetricEventStatus.DRAFT,
-              createdBy: actorId,
+              sourceType: 'MANUAL',
+              comment: data.notes ? String(data.notes) : null,
+              dimensions: {},
+              status: 'DRAFT',
+              submittedBy: actorId,
             },
           });
           created.push(event);
@@ -296,8 +351,8 @@ export class MetricsService {
       userId: actorId,
       entity: 'MetricEvent',
       entityId: null,
-      action: 'bulk_import',
-      metadata: { inserted: created.length, errors: errors.length },
+      action: 'CREATE',
+      metadata: { bulkImport: true, inserted: created.length, errors: errors.length },
     });
     return { inserted: created.length, errors };
   }

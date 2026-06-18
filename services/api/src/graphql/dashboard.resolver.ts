@@ -77,8 +77,13 @@ export class DashboardResolver {
     @Args('fy') fy: string,
   ): Promise<FacilityComparisonRow[]> {
     const period = parseFy(fy);
-    const facilities: { id: string; name: string }[] = await (this.prisma as any).hierarchyNode.findMany({
-      where: { tenantId: user.tenantId, type: 'FACILITY' },
+    // schema: EntityNode with EntityType SITE represents a facility-level node.
+    const facilities: { id: string; name: string }[] = await (this.prisma as any).entityNode.findMany({
+      where: {
+        tenantId: user.tenantId,
+        type: 'SITE',
+        OR: [{ effectiveTo: null }, { effectiveTo: { gt: new Date() } }],
+      },
       select: { id: true, name: true },
     });
     const rows: FacilityComparisonRow[] = [];
@@ -101,27 +106,33 @@ export class DashboardResolver {
     @CurrentUser() user: AuthenticatedUser,
     @Args('limit', { type: () => Int, defaultValue: 10 }) limit: number,
   ): Promise<AnomalyRow[]> {
-    const flags: {
+    // NOTE: AnomalyFlag is not yet in schema.prisma. Until it lands, surface
+    // open AuditExceptions (severity HIGH) as anomalies so the dashboard
+    // widget keeps working without crashing on a missing model.
+    const safeLimit = Math.min(Math.max(1, limit ?? 10), 100);
+    const exceptions: {
       id: string;
-      canonicalKey: string;
-      scopeNodeId: string;
-      value: Decimal;
-      unit: string;
-      zScore: Decimal | null;
-      reason: string | null;
-    }[] = await (this.prisma as any).anomalyFlag.findMany({
-      where: { tenantId: user.tenantId, status: 'OPEN' },
-      orderBy: { zScore: 'desc' },
-      take: limit,
+      severity: string;
+      description: string;
+      metricEventId: string | null;
+      snapshot: { tenantId: string } | null;
+    }[] = await (this.prisma as any).auditException.findMany({
+      where: {
+        snapshot: { tenantId: user.tenantId },
+        status: 'OPEN',
+      },
+      orderBy: [{ severity: 'desc' }, { raisedAt: 'desc' }],
+      take: safeLimit,
+      include: { snapshot: { select: { tenantId: true } } },
     });
-    return flags.map((f, i) => ({
-      id: f.id,
-      canonicalKey: f.canonicalKey,
-      scopeNodeId: f.scopeNodeId,
-      value: new Decimal(f.value).toNumber(),
-      unit: f.unit,
-      zScore: f.zScore ? new Decimal(f.zScore).toNumber() : 0,
-      reason: f.reason ?? 'unspecified',
+    return exceptions.map((e, i) => ({
+      id: e.id,
+      canonicalKey: e.metricEventId ?? '',
+      scopeNodeId: '',
+      value: 0,
+      unit: '',
+      zScore: 0,
+      reason: e.description ?? e.severity,
       rank: i + 1,
     }));
   }

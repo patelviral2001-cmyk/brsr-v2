@@ -1,8 +1,13 @@
 "use client";
 
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useAppStore } from "@/stores/app.store";
 
+/**
+ * Global side drawer. Other features push a `{type, id}` payload into the
+ * app store and we look up which renderer to mount. Until the catalog of
+ * renderers grows, we show the id + type plus a back link.
+ */
 export function RightDrawer() {
   const open = useAppStore((s) => s.rightDrawerOpen);
   const close = useAppStore((s) => s.closeRightDrawer);
@@ -13,14 +18,18 @@ export function RightDrawer() {
       <SheetContent side="right" className="w-[440px] sm:max-w-md">
         <SheetHeader>
           <SheetTitle>{content?.type ?? "Details"}</SheetTitle>
+          {content?.id && (
+            <SheetDescription>
+              <code className="font-mono text-[10px] text-slate-500">{content.id}</code>
+            </SheetDescription>
+          )}
         </SheetHeader>
         <div className="p-6 text-sm text-slate-600">
           {content ? (
-            <div>
-              <div className="font-medium text-slate-900">{content.type}</div>
-              <div className="text-xs text-slate-500">ID: {content.id}</div>
-              <p className="mt-4 text-slate-500">Detail content goes here.</p>
-            </div>
+            <p className="text-slate-500">
+              Inline detail panels are rolling out per entity type. Use the
+              main page navigation for the full record while we ship them.
+            </p>
           ) : (
             <p>No selection.</p>
           )}

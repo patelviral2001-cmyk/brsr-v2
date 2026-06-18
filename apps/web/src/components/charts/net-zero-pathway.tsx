@@ -11,6 +11,17 @@ interface PathwayPoint {
 
 export function NetZeroPathway({ data }: { data: PathwayPoint[] }) {
   const safe = Array.isArray(data) ? data : [];
+  if (safe.length === 0) {
+    return (
+      <div
+        className="flex h-[340px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-400"
+        role="img"
+        aria-label="Empty net-zero pathway chart"
+      >
+        Set a net-zero target to render the pathway.
+      </div>
+    );
+  }
   return (
     <ResponsiveContainer width="100%" height={340}>
       <ComposedChart data={safe} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>

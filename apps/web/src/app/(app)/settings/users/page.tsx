@@ -5,15 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageHeader } from "@/components/common/page-header";
+import { EmptyState } from "@/components/common/empty-state";
+import { TableSkeleton } from "@/components/common/loading-skeleton";
 import { DataTable, type Column } from "@/components/common/data-table";
 import { useUsers } from "@/lib/api/queries";
 import { initials } from "@/lib/utils";
 import { formatRelative } from "@/lib/format";
-import { Plus, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Plus, ShieldCheck, Users2 } from "lucide-react";
 import type { User } from "@/types";
+import { toast } from "sonner";
 
 export default function UsersSettingsPage() {
-  const { data: users } = useUsers();
+  const { data: users, isLoading, isError, error, refetch } = useUsers();
   const cols: Column<User>[] = [
     { key: "name", header: "User", cell: (r) => (
       <div className="flex items-center gap-2">
@@ -29,12 +32,61 @@ export default function UsersSettingsPage() {
     { key: "status", header: "Status", cell: (r) => <Badge variant={r.status === "ACTIVE" ? "success" : r.status === "INVITED" ? "info" : "outline"} size="sm">{r.status}</Badge> },
     { key: "lastLoginAt", header: "Last login", cell: (r) => <span className="text-xs text-slate-500">{r.lastLoginAt ? formatRelative(r.lastLoginAt) : "—"}</span> },
   ];
+  const handleInvite = () =>
+    toast.info("Invite a user", {
+      description: "Invite UI rolls out in v2.1. For now, send the new email to admin@brsr.ai with the desired role.",
+    });
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-5">
+        <PageHeader title="Users" description="Manage workspace members" />
+        <TableSkeleton rows={6} />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6 space-y-5">
+        <PageHeader title="Users" description="Manage workspace members" />
+        <EmptyState
+          icon={<AlertTriangle className="h-6 w-6" />}
+          title="Couldn't load users"
+          description={error instanceof Error ? error.message : "Please try again."}
+          action={<Button onClick={() => refetch()}>Try again</Button>}
+        />
+      </div>
+    );
+  }
+
+  const list = Array.isArray(users) ? users : [];
+
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title="Users" description="Manage workspace members" actions={<Button size="sm"><Plus className="h-4 w-4" />Invite</Button>} />
-      <Card>
-        <CardContent className="p-0">{Array.isArray(users) && <DataTable data={users} columns={cols} rowKey={(r) => r.id} dense />}</CardContent>
-      </Card>
+      <PageHeader
+        title="Users"
+        description="Manage workspace members"
+        actions={
+          <Button size="sm" onClick={handleInvite} aria-label="Invite a user">
+            <Plus className="h-4 w-4" />Invite
+          </Button>
+        }
+      />
+      {list.length === 0 ? (
+        <EmptyState
+          icon={<Users2 className="h-6 w-6" />}
+          title="No users yet"
+          description="Invite teammates to start collaborating."
+          action={<Button onClick={handleInvite}><Plus className="h-4 w-4" />Invite</Button>}
+        />
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <DataTable data={list} columns={cols} rowKey={(r) => r.id} dense />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

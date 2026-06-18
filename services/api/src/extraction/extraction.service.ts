@@ -20,16 +20,22 @@ export class ExtractionService {
 
   async queue(tenantId: string, q: ExtractionQueueQueryDto) {
     const maxConf = q.maxConfidence ?? 0.85;
+    const take = Math.min(Math.max(1, q.take ?? 50), 200);
+    // Schema ExtractionStatus enum: DRAFT|NEEDS_REVIEW|APPROVED|REJECTED|OVERRIDDEN.
+    // AUTO_ACCEPTED does not exist.
+    const status = q.status
+      ? { status: q.status as any }
+      : { status: { in: ['NEEDS_REVIEW', 'DRAFT'] as string[] } };
     return (this.prisma as any).extractionField.findMany({
       where: {
         tenantId,
         documentId: q.documentId,
         OR: [{ confidenceComposite: { lt: maxConf } }, { status: 'NEEDS_REVIEW' }],
-        status: q.status ?? { in: ['NEEDS_REVIEW', 'AUTO_ACCEPTED'] },
+        ...status,
       },
       include: { document: { select: { id: true, originalName: true, docType: true } } },
       orderBy: [{ confidenceComposite: 'asc' }, { createdAt: 'asc' }],
-      take: q.take ?? 50,
+      take,
     });
   }
 
@@ -48,13 +54,17 @@ export class ExtractionService {
     if (!before) throw new NotFoundException('Field not found');
     if (before.status === 'APPROVED') throw new ConflictException('Field already approved');
 
+    // Schema columns: valueText, valueNum, unitExtracted, overrideReason,
+    // reviewedBy, reviewedAt. Decide numeric vs textual based on input.
+    const isNumeric = typeof dto.value === 'number' || (typeof dto.value === 'string' && /^-?\d+(\.\d+)?$/.test(dto.value));
     const updated = await (this.prisma as any).extractionField.update({
       where: { id },
       data: {
-        value: typeof dto.value === 'object' ? dto.value : { v: dto.value },
-        unit: dto.unit ?? before.unit,
-        reviewerNotes: dto.notes,
-        status: 'APPROVED',
+        valueText: isNumeric ? null : (typeof dto.value === 'object' ? JSON.stringify(dto.value) : String(dto.value ?? '')),
+        valueNum: isNumeric ? new Decimal(String(dto.value)) : null,
+        unitExtracted: dto.unit ?? before.unitExtracted,
+        overrideReason: dto.notes,
+        status: 'OVERRIDDEN',
         reviewedAt: new Date(),
         reviewedBy: actorId,
       },
@@ -64,9 +74,34 @@ export class ExtractionService {
       userId: actorId,
       entity: 'ExtractionField',
       entityId: id,
-      action: 'override',
+      action: 'OVERRIDE',
       before,
       after: updated,
+    });
+    return updated;
+  }
+
+  async reject(tenantId: string, id: string, dto: RejectExtractionFieldDto, actorId: string) {
+    const before = await (this.prisma as any).extractionField.findFirst({ where: { id, tenantId } });
+    if (!before) throw new NotFoundException('Field not found');
+    const updated = await (this.prisma as any).extractionField.update({
+      where: { id },
+      data: {
+        status: 'REJECTED',
+        overrideReason: dto.reason,
+        reviewedAt: new Date(),
+        reviewedBy: actorId,
+      },
+    });
+    await this.audit.log({
+      tenantId,
+      userId: actorId,
+      entity: 'ExtractionField',
+      entityId: id,
+      action: 'REJECT',
+      before,
+      after: updated,
+      metadata: { reason: dto.reason },
     });
     return updated;
   }
@@ -85,39 +120,18 @@ export class ExtractionService {
       userId: actorId,
       entity: 'ExtractionField',
       entityId: id,
-      action: 'approve',
+      action: 'APPROVE',
       before,
       after: updated,
-    });
-    return updated;
-  }
-
-  async reject(tenantId: string, id: string, dto: RejectExtractionFieldDto, actorId: string) {
-    const before = await (this.prisma as any).extractionField.findFirst({ where: { id, tenantId } });
-    if (!before) throw new NotFoundException('Field not found');
-    const updated = await (this.prisma as any).extractionField.update({
-      where: { id },
-      data: {
-        status: 'REJECTED',
-        reviewerNotes: dto.reason,
-        reviewedAt: new Date(),
-        reviewedBy: actorId,
-      },
-    });
-    await this.audit.log({
-      tenantId,
-      userId: actorId,
-      entity: 'ExtractionField',
-      entityId: id,
-      action: 'reject',
-      before,
-      after: updated,
-      metadata: { reason: dto.reason },
     });
     return updated;
   }
 
   async bulkApprove(tenantId: string, dto: BulkApproveDto, actorId: string) {
+    if (!dto.ids?.length) return { approved: 0 };
+    if (dto.ids.length > 1000) {
+      throw new ConflictException('Bulk-approve capped at 1,000 ids per request');
+    }
     const { count } = await (this.prisma as any).extractionField.updateMany({
       where: { id: { in: dto.ids }, tenantId, status: { not: 'APPROVED' } },
       data: { status: 'APPROVED', reviewedAt: new Date(), reviewedBy: actorId },
@@ -127,8 +141,8 @@ export class ExtractionService {
       userId: actorId,
       entity: 'ExtractionField',
       entityId: null,
-      action: 'bulk_approve',
-      metadata: { count, ids: dto.ids },
+      action: 'APPROVE',
+      metadata: { bulkApprove: true, count, ids: dto.ids },
     });
     return { approved: count };
   }

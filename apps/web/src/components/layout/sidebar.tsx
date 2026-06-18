@@ -92,8 +92,9 @@ export function Sidebar() {
                   const link = (
                     <Link
                       href={item.href}
+                      aria-current={active ? "page" : undefined}
                       className={cn(
-                        "group flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm font-medium transition-all",
+                        "group relative flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm font-medium transition-all",
                         active
                           ? "bg-primary-50 text-primary-800"
                           : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
@@ -114,16 +115,16 @@ export function Sidebar() {
                           )}
                         </>
                       )}
-                      {active && (
-                        <motion.div
-                          layoutId="sidebar-active"
-                          className="absolute left-0 h-6 w-0.5 rounded-r bg-primary-600"
-                        />
-                      )}
                     </Link>
                   );
                   return (
                     <li key={item.href} className="relative">
+                      {active && (
+                        <motion.div
+                          layoutId="sidebar-active"
+                          className="absolute left-0 top-1.5 h-6 w-0.5 rounded-r bg-primary-600"
+                        />
+                      )}
                       {collapsed ? (
                         <Tooltip>
                           <TooltipTrigger asChild>{link}</TooltipTrigger>

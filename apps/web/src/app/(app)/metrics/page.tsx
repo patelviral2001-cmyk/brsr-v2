@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/common/page-header";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,15 +9,20 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EmptyState } from "@/components/common/empty-state";
+import { TableSkeleton } from "@/components/common/loading-skeleton";
 import { MetricRegistryCard } from "@/components/metrics/metric-registry-card";
 import { MetricEventTable } from "@/components/metrics/metric-event-table";
 import { useMetricRegistry, useMetricEvents } from "@/lib/api/queries";
 import { FRAMEWORKS } from "@/lib/constants";
-import { Plus, Search } from "lucide-react";
+import { Database, Plus, Search } from "lucide-react";
+import { toast } from "sonner";
 
 export default function MetricsPage() {
-  const { data: registry } = useMetricRegistry();
-  const { data: events } = useMetricEvents();
+  const search = useSearchParams();
+  const initialTab = search?.get("tab") === "events" ? "events" : "registry";
+  const { data: registry, isLoading: regLoading } = useMetricRegistry();
+  const { data: events, isLoading: evtLoading } = useMetricEvents();
   const [q, setQ] = useState("");
   const [fw, setFw] = useState("all");
 
@@ -47,10 +53,22 @@ export default function MetricsPage() {
       <PageHeader
         title="Metrics"
         description="Canonical metric registry and metric events across all frameworks"
-        actions={<Button size="sm"><Plus className="h-4 w-4" />New Metric</Button>}
+        actions={
+          <Button
+            size="sm"
+            onClick={() =>
+              toast.info("New Metric", {
+                description: "Custom metrics ship in v2.1. For now, request a canonical key from your CSM.",
+              })
+            }
+            aria-label="Create new metric"
+          >
+            <Plus className="h-4 w-4" />New Metric
+          </Button>
+        }
       />
 
-      <Tabs defaultValue="registry">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="registry">Registry <Badge variant="ghost" size="sm" className="ml-1.5">{Array.isArray(registry) ? registry.length : 0}</Badge></TabsTrigger>
           <TabsTrigger value="events">Events <Badge variant="ghost" size="sm" className="ml-1.5">{Array.isArray(events) ? events.length : 0}</Badge></TabsTrigger>
@@ -71,24 +89,48 @@ export default function MetricsPage() {
             </Select>
             <Badge variant="ghost" className="ml-auto">{filtered.length} of {Array.isArray(registry) ? registry.length : 0}</Badge>
           </div>
-          <div className="space-y-6">
-            {grouped.map(([cat, metrics]) => (
-              <div key={cat}>
-                <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">{cat}</h3>
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {metrics.map((m) => <MetricRegistryCard key={m.id} metric={m} />)}
+          {regLoading ? (
+            <TableSkeleton rows={6} />
+          ) : grouped.length === 0 ? (
+            <EmptyState
+              icon={<Database className="h-6 w-6" />}
+              title="No metrics match"
+              description={
+                Array.isArray(registry) && registry.length === 0
+                  ? "Your tenant's metric registry is being seeded."
+                  : "Try clearing filters."
+              }
+            />
+          ) : (
+            <div className="space-y-6">
+              {grouped.map(([cat, metrics]) => (
+                <div key={cat}>
+                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-500">{cat}</h3>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {metrics.map((m) => <MetricRegistryCard key={m.id} metric={m} />)}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="events">
-          <Card>
-            <CardContent className="p-0">
-              {Array.isArray(events) && <MetricEventTable events={events} />}
-            </CardContent>
-          </Card>
+          {evtLoading ? (
+            <TableSkeleton rows={8} />
+          ) : !Array.isArray(events) || events.length === 0 ? (
+            <EmptyState
+              icon={<Database className="h-6 w-6" />}
+              title="No metric events yet"
+              description="Submit metrics from the registry to populate this list."
+            />
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <MetricEventTable events={events} />
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

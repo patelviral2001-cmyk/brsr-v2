@@ -8,12 +8,43 @@ import { KpiCard } from "@/components/common/kpi-card";
 import { EmissionsByScopeChart } from "@/components/charts/emissions-by-scope";
 import { EmissionsTrendChart } from "@/components/charts/emissions-trend";
 import { EnergyMixChart } from "@/components/charts/energy-mix";
+import { EmptyState } from "@/components/common/empty-state";
+import { PageSkeleton } from "@/components/common/loading-skeleton";
 import { useEmissionsOverview } from "@/lib/api/queries";
 import { formatTonnesCO2e, formatNumber } from "@/lib/format";
-import { Factory, Zap, TrendingDown, Leaf } from "lucide-react";
+import { AlertTriangle, Factory, Zap, TrendingDown, Leaf } from "lucide-react";
 
 export default function CarbonOverviewPage() {
-  const { data: e } = useEmissionsOverview();
+  const { data: e, isLoading, isError, error, refetch } = useEmissionsOverview();
+
+  if (isLoading) {
+    return (<div className="p-6"><PageHeader title="Carbon Accounting" /><PageSkeleton /></div>);
+  }
+  if (isError) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Carbon Accounting" />
+        <EmptyState
+          icon={<AlertTriangle className="h-6 w-6" />}
+          title="Couldn't load emissions overview"
+          description={error instanceof Error ? error.message : "Please try again."}
+          action={<Button onClick={() => refetch()}>Try again</Button>}
+        />
+      </div>
+    );
+  }
+  if (!e) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Carbon Accounting" />
+        <EmptyState
+          icon={<Leaf className="h-6 w-6" />}
+          title="No emissions data yet"
+          description="Upload utility bills, fuel receipts, and policies to get started."
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-5">
@@ -28,8 +59,6 @@ export default function CarbonOverviewPage() {
         }
       />
 
-      {e && (
-        <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <KpiCard label="Scope 1" value={formatTonnesCO2e(e.scope1 ?? 0, { compact: true })} icon={<Factory className="h-4 w-4" />} delta={-3.8} positiveIsGood={false} hint="Direct (stationary + mobile)" />
             <KpiCard label="Scope 2 (Loc)" value={formatTonnesCO2e(e.scope2Location ?? 0, { compact: true })} icon={<Zap className="h-4 w-4" />} delta={-12.2} positiveIsGood={false} hint="Grid average factors" />
@@ -116,8 +145,6 @@ export default function CarbonOverviewPage() {
               </div>
             </CardContent>
           </Card>
-        </>
-      )}
     </div>
   );
 }

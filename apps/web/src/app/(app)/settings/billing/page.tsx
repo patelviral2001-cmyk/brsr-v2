@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/common/page-header";
 import { formatINR } from "@/lib/format";
 import { Download } from "lucide-react";
+import { toast } from "sonner";
 
 export default function BillingPage() {
   return (
@@ -29,8 +30,30 @@ export default function BillingPage() {
             <Stat label="Entities" value="14" sub="unlimited" />
           </div>
           <div className="mt-4 flex gap-2">
-            <Button variant="outline" size="sm">Upgrade</Button>
-            <Button variant="outline" size="sm">View receipts</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                toast.info("Upgrade plan", {
+                  description: "Contact billing@brsr.ai to discuss upgrade options.",
+                })
+              }
+              aria-label="Upgrade plan"
+            >
+              Upgrade
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                toast.info("Receipts", {
+                  description: "Scroll to the Invoices table — every row has a PDF download.",
+                })
+              }
+              aria-label="View receipts"
+            >
+              View receipts
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -59,7 +82,20 @@ export default function BillingPage() {
                   <td className="px-4 py-2 font-mono text-xs">{i.n}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{formatINR(i.a, { compact: true })}</td>
                   <td className="px-4 py-2"><Badge variant="success" size="sm">{i.s}</Badge></td>
-                  <td className="px-4 py-2 text-right"><Button variant="ghost" size="sm"><Download className="h-4 w-4" /></Button></td>
+                  <td className="px-4 py-2 text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        toast.info(`Download ${i.n}`, {
+                          description: "Receipt PDFs are emailed within 5 minutes.",
+                        })
+                      }
+                      aria-label={`Download invoice ${i.n}`}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>

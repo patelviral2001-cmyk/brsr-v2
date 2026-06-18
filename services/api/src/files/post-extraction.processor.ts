@@ -20,20 +20,41 @@ export class PostExtractionProcessor extends WorkerHost {
     const { documentId, tenantId } = job.data;
     this.logger.log(`Validating extraction for document=${documentId}`);
 
-    const fields: { id: string; fieldKey: string; unit: string | null; value: unknown }[] =
-      await (this.prisma as any).extractionField.findMany({ where: { documentId, tenantId } });
-
-    for (const f of fields) {
-      const registry = await (this.prisma as any).metricRegistry.findFirst({
-        where: { canonicalKey: f.fieldKey },
-      });
-      if (!registry) continue;
-      if (registry.unit && f.unit && registry.unit !== f.unit) {
-        await (this.prisma as any).extractionField.update({
-          where: { id: f.id },
-          data: { status: 'NEEDS_REVIEW', validationNotes: `Unit mismatch: expected ${registry.unit}, got ${f.unit}` },
+    try {
+      const fields: { id: string; canonicalKey: string; unitExtracted: string | null }[] =
+        await (this.prisma as any).extractionField.findMany({
+          where: { documentId, tenantId },
+          select: { id: true, canonicalKey: true, unitExtracted: true },
         });
+
+      for (const f of fields) {
+        // Schema model is CanonicalMetric (PK = key), not metricRegistry.
+        const registry = await (this.prisma as any).canonicalMetric.findUnique({
+          where: { key: f.canonicalKey },
+          select: { canonicalUnit: true, allowedUnits: true },
+        });
+        if (!registry) continue;
+        const expectedUnit = registry.canonicalUnit as string | null;
+        const allowed: string[] = registry.allowedUnits ?? [];
+        if (
+          expectedUnit &&
+          f.unitExtracted &&
+          expectedUnit !== f.unitExtracted &&
+          !allowed.includes(f.unitExtracted)
+        ) {
+          await (this.prisma as any).extractionField.update({
+            where: { id: f.id },
+            data: {
+              status: 'NEEDS_REVIEW',
+              overrideReason: `Unit mismatch: expected ${expectedUnit}, got ${f.unitExtracted}`,
+            },
+          });
+        }
       }
+    } catch (e) {
+      this.logger.error(`Post-extraction validation failed for ${documentId}: ${(e as Error).message}`);
+      // Re-throw so BullMQ retries with exponential backoff.
+      throw e;
     }
   }
 }

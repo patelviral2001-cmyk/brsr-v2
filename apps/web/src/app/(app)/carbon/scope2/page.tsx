@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { useEmissionsOverview } from "@/lib/api/queries";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { formatTonnesCO2e, formatNumber } from "@/lib/format";
+import { formatTonnesCO2e } from "@/lib/format";
 
 export default function Scope2Page() {
   const { data: e } = useEmissionsOverview();
@@ -18,9 +18,16 @@ export default function Scope2Page() {
       <PageHeader title="Scope 2" description="Indirect emissions from purchased energy" />
 
       <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
-        <Label htmlFor="market" className="text-sm">Location-based</Label>
-        <Switch id="market" checked={market} onCheckedChange={setMarket} />
-        <Label htmlFor="market" className="text-sm">Market-based</Label>
+        <span className={`text-sm ${market ? "text-slate-400" : "font-medium text-slate-900"}`}>Location-based</span>
+        <Switch
+          id="scope2-method"
+          checked={market}
+          onCheckedChange={setMarket}
+          aria-label="Toggle accounting method between location-based and market-based"
+        />
+        <Label htmlFor="scope2-method" className={`text-sm ${market ? "font-medium text-slate-900" : "text-slate-400"}`}>
+          Market-based
+        </Label>
         <Badge variant="primary" className="ml-auto">
           {e ? formatTonnesCO2e((market ? e.scope2Market : e.scope2Location) ?? 0) : "—"}
         </Badge>

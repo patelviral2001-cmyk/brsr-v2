@@ -52,6 +52,23 @@ function mimeFromExtension(filename: string): string {
   return EXT_TO_MIME[ext] ?? 'application/octet-stream';
 }
 
+/**
+ * Sanitises a user-provided filename before it lands in S3 metadata, audit
+ * logs, or download Content-Disposition headers. Strips path separators and
+ * dangerous quoting characters; caps length to avoid abuse.
+ */
+function sanitizeFilename(name: string): string {
+  if (!name) return 'file';
+  const base = name.replace(/\\/g, '/').split('/').pop() ?? 'file';
+  const cleaned = base
+    // strip ASCII control chars
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    // neutralise characters that break HTTP headers / S3 metadata
+    .replace(/["'`$<>|;\r\n]/g, '_')
+    .trim();
+  return cleaned.slice(0, 200) || 'file';
+}
+
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name);
@@ -88,14 +105,20 @@ export class FilesService {
     }
 
     const bucket = this.s3.bucketEvidence();
-    const ext = file.originalname.split('.').pop()?.toLowerCase() ?? 'bin';
+    const safeOriginalName = sanitizeFilename(file.originalname);
+    // Use the cleaned extension (alphanumeric only) so we never write a key
+    // like 'foo.exe;.pdf' or similar.
+    const rawExt = safeOriginalName.split('.').pop()?.toLowerCase() ?? 'bin';
+    const ext = /^[a-z0-9]{1,8}$/.test(rawExt) ? rawExt : 'bin';
     const s3Key = `t/${tenantId}/${new Date().toISOString().slice(0, 10)}/${uuidv4()}.${ext}`;
     await this.s3.put({
       bucket,
       key: s3Key,
       body: file.buffer,
       contentType: file.mimetype,
-      metadata: { tenantId, uploaderId: actorId, originalName: file.originalname },
+      // S3 metadata values must be ASCII and not contain CR/LF; sanitised name
+      // is what travels.
+      metadata: { tenantId, uploaderId: actorId, originalName: safeOriginalName },
     });
 
     // Resolve scope node — validate that the provided one belongs to this
@@ -156,7 +179,7 @@ export class FilesService {
           tenantId,
           scopeNodeId,
           uploadedBy: actorId,
-          originalName: file.originalname,
+          originalName: safeOriginalName,
           mimeType: file.mimetype,
           sizeBytes: file.size,
           sha256,
@@ -193,7 +216,7 @@ export class FilesService {
       entity: 'Document',
       entityId: doc.id,
       action: 'upload',
-      metadata: { originalName: file.originalname, sizeBytes: file.size, docType: dto.docType },
+      metadata: { originalName: safeOriginalName, sizeBytes: file.size, docType: dto.docType },
     });
     return doc;
   }
@@ -302,12 +325,27 @@ export class FilesService {
 
   async signedUrl(tenantId: string, id: string, ttlSeconds = 600): Promise<string> {
     const doc = await this.findOne(tenantId, id);
-    return this.s3.presignGet(doc.s3Bucket, doc.s3Key, ttlSeconds);
+    // Force browser download (Content-Disposition: attachment) so any
+    // attacker-controlled HTML/SVG isn't rendered in the user's session.
+    return this.s3.presignGet(
+      doc.s3Bucket,
+      doc.s3Key,
+      ttlSeconds,
+      sanitizeFilename(doc.originalName ?? 'document'),
+    );
   }
 
   /**
    * Internal callback from the AI engine. Persists extraction fields, updates
    * document status, and enqueues a post-extraction validation job.
+   *
+   * Field-name alignment (schema.prisma):
+   *   ExtractionField: canonicalKey, valueText/valueNum, unitExtracted,
+   *     confidenceComposite, sourcePage, sourceBbox, rawText,
+   *     confidenceComponents, status ∈ {DRAFT,NEEDS_REVIEW,APPROVED,REJECTED,OVERRIDDEN}
+   *   Document.status ∈ {PENDING,CLASSIFIED,EXTRACTED,REVIEW_NEEDED,APPROVED,REJECTED}
+   *   Document has classifierConfidence (not confidenceComposite), no lastError,
+   *   no extractedAt.
    */
   async handleExtractionCallback(dto: ExtractionCallbackDto) {
     const doc = await (this.prisma as any).document.findFirst({
@@ -319,24 +357,31 @@ export class FilesService {
       if (dto.status === 'FAILED') {
         await (tx as any).document.update({
           where: { id: dto.documentId },
-          data: { status: 'EXTRACTION_FAILED', lastError: dto.error ?? 'unknown', extractedAt: new Date() },
+          // 'EXTRACTION_FAILED' isn't in DocStatus enum — REJECTED is the
+          // terminal failure state. Reason captured in audit log.
+          data: { status: 'REJECTED' },
         });
         return;
       }
 
       for (const f of dto.fields) {
+        const isNumeric = typeof f.value === 'number' || (typeof f.value === 'string' && /^-?\d+(\.\d+)?$/.test(f.value as string));
         await (tx as any).extractionField.create({
           data: {
             tenantId: dto.tenantId,
             documentId: dto.documentId,
-            fieldKey: f.fieldKey,
-            value: typeof f.value === 'object' ? f.value : { v: f.value },
-            unit: f.unit,
-            confidence: new Decimal(f.confidence),
-            pageNumber: f.pageNumber,
-            bbox: f.bbox ?? [],
-            evidenceText: f.evidenceText,
-            status: f.confidence < 0.85 ? 'NEEDS_REVIEW' : 'AUTO_ACCEPTED',
+            canonicalKey: f.fieldKey,
+            valueText: isNumeric ? null : (typeof f.value === 'object' ? JSON.stringify(f.value) : String(f.value ?? '')),
+            valueNum: isNumeric ? new Decimal(String(f.value)) : null,
+            unitExtracted: f.unit,
+            sourcePage: f.pageNumber,
+            sourceBbox: f.bbox ?? undefined,
+            rawText: f.evidenceText ?? '',
+            confidenceComponents: { model: f.confidence },
+            confidenceComposite: f.confidence,
+            // ExtractionStatus enum has no AUTO_ACCEPTED — DRAFT is the
+            // post-extract default; NEEDS_REVIEW gates human triage.
+            status: f.confidence < 0.85 ? 'NEEDS_REVIEW' : 'DRAFT',
           },
         });
       }
@@ -345,21 +390,45 @@ export class FilesService {
         where: { id: dto.documentId },
         data: {
           status:
-            dto.status === 'PARTIAL'
-              ? 'PARTIAL'
-              : composite < 0.85 || dto.needsReview
-                ? 'NEEDS_REVIEW'
-                : 'EXTRACTED',
-          confidenceComposite: new Decimal(composite),
-          extractedAt: new Date(),
+            composite < 0.85 || dto.needsReview
+              ? 'REVIEW_NEEDED'
+              : 'EXTRACTED',
+          classifierConfidence: composite,
         },
       });
     });
 
-    await this.validationQueue.add('post-extraction', {
-      documentId: dto.documentId,
-      tenantId: dto.tenantId,
-    });
+    await this.validationQueue.add(
+      'post-extraction',
+      {
+        documentId: dto.documentId,
+        tenantId: dto.tenantId,
+      },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+      },
+    );
+
+    // Best-effort audit; never block the callback on logging.
+    try {
+      await this.audit.log({
+        tenantId: dto.tenantId,
+        userId: null,
+        entity: 'Document',
+        entityId: dto.documentId,
+        action: 'EXTRACT',
+        metadata: {
+          status: dto.status,
+          fieldCount: dto.fields.length,
+          error: dto.error ?? undefined,
+        },
+      });
+    } catch (e) {
+      this.logger.warn(`Audit log skipped for extraction callback: ${(e as Error).message}`);
+    }
+
+    return { ok: true };
   }
 }
 

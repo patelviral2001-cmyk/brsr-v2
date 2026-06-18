@@ -21,13 +21,32 @@ export function MaterialityMatrix({ topics }: { topics: MaterialTopic[] }) {
     priority: t.priority,
   }));
 
+  if (data.length === 0) {
+    return (
+      <div
+        className="flex h-[280px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-400"
+        role="img"
+        aria-label="Empty materiality matrix"
+      >
+        No topics scored yet.
+      </div>
+    );
+  }
+
   return (
     <ResponsiveContainer width="100%" height={460}>
       <ScatterChart margin={{ top: 16, right: 24, left: 0, bottom: 28 }}>
         <CartesianGrid stroke="#f1f5f9" strokeDasharray="0" />
-        <XAxis type="number" dataKey="impact" name="Impact" domain={[0, 100]} unit="" tick={{ fontSize: 11 }} axisLine={false} tickLine={false}>
-          <label />
-        </XAxis>
+        <XAxis
+          type="number"
+          dataKey="impact"
+          name="Impact"
+          domain={[0, 100]}
+          unit=""
+          tick={{ fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+        />
         <YAxis type="number" dataKey="financial" name="Financial" domain={[0, 100]} unit="" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
         <ZAxis type="number" dataKey="weight" range={[60, 380]} name="Stakeholder Weight" />
         <ReferenceArea x1={66} x2={100} y1={66} y2={100} fill="#047857" fillOpacity={0.04} />

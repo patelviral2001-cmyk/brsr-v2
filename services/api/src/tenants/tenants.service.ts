@@ -18,24 +18,41 @@ export class TenantsService {
 
   async updateBranding(tenantId: string, dto: UpdateTenantBrandingDto, actorId: string) {
     const before = await this.me(tenantId);
-    const updated = await (this.prisma as any).tenant.update({
-      where: { id: tenantId },
-      data: {
-        logoUrl: dto.logoUrl,
-        primaryColor: dto.primaryColor,
-        secondaryColor: dto.secondaryColor,
-        reportFooter: dto.reportFooter,
-        displayName: dto.displayName,
-      },
+    // Schema fields: logoUrl, brandColor (single), name. There is no
+    // primaryColor, secondaryColor, reportFooter or displayName column —
+    // store the extras under tenantSetting so customers don't lose them.
+    const data: Record<string, unknown> = {};
+    if (dto.logoUrl !== undefined) data.logoUrl = dto.logoUrl;
+    if (dto.primaryColor !== undefined) data.brandColor = dto.primaryColor;
+    if (dto.displayName !== undefined) data.name = dto.displayName;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const t = Object.keys(data).length
+        ? await (tx as any).tenant.update({ where: { id: tenantId }, data })
+        : before;
+      // Persist secondaryColor / reportFooter as tenant settings so the API
+      // contract still works while the schema lacks the columns.
+      const extras: Array<[string, unknown]> = [];
+      if (dto.secondaryColor !== undefined) extras.push(['branding.secondaryColor', dto.secondaryColor]);
+      if (dto.reportFooter !== undefined) extras.push(['branding.reportFooter', dto.reportFooter]);
+      for (const [key, value] of extras) {
+        await (tx as any).tenantSetting.upsert({
+          where: { tenantId_key: { tenantId, key } },
+          update: { value: value as never },
+          create: { tenantId, key, value: value as never },
+        });
+      }
+      return t;
     });
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'Tenant',
       entityId: tenantId,
-      action: 'update_branding',
+      action: 'UPDATE',
       before,
       after: updated,
+      metadata: { branding: true },
     });
     return updated;
   }

@@ -34,29 +34,41 @@ export class BrsrReportProcessor extends WorkerHost {
       return;
     }
 
+    // Schema Report stores generation inputs inside reportData (json).
+    const reportData = (report.reportData ?? {}) as {
+      scopeNodeIds?: string[];
+      requestedFormats?: string[];
+      principles?: number[];
+    };
+
     const resolved = await this.brsr.resolve(tenantId, {
       fy: report.fy,
       framework: report.framework,
-      scopeNodeIds: report.scopeNodeIds,
+      scopeNodeIds: reportData.scopeNodeIds ?? [],
     } as any);
 
     let buf: Buffer;
     let mime: string;
+    // Schema has dedicated columns pdfS3, xlsxS3, xbrlS3, docxS3 (single S3 key
+    // each, no separate bucket). Map format -> column.
+    let column: 'pdfS3' | 'xlsxS3' | 'xbrlS3' | 'docxS3';
     let suffix: string;
 
     if (format === 'pdf') {
       buf = await this.buildPdf(report, resolved);
       mime = 'application/pdf';
+      column = 'pdfS3';
       suffix = 'pdf';
     } else if (format === 'xlsx') {
       buf = await this.buildXlsx(report, resolved);
       mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      column = 'xlsxS3';
       suffix = 'xlsx';
     } else {
       // XBRL stub — real implementation lives in services/xbrl/ (Arelle).
-      // We persist a placeholder XML envelope so the file exists end-to-end.
       buf = Buffer.from(this.buildXbrlStub(report, resolved), 'utf8');
       mime = 'application/xml';
+      column = 'xbrlS3';
       suffix = 'xbrl';
     }
 
@@ -66,21 +78,21 @@ export class BrsrReportProcessor extends WorkerHost {
     const hash = hashObject(resolved);
 
     const update: Record<string, unknown> = {
-      [`${suffix}S3Key`]: key,
-      [`${suffix}S3Bucket`]: bucket,
-      contentHash: hash,
+      [column]: key,
+      hashAnchor: hash,
     };
 
-    // Update + flip status to GENERATED once all requested formats are present.
     const updated = await (this.prisma as any).report.update({
       where: { id: report.id },
       data: update,
     });
-    const allDone = (updated.formats as string[]).every((f) => !!updated[`${f}S3Key`]);
-    if (allDone) {
+    // Flip status to PUBLISHED when all requested formats are persisted.
+    const requested = (reportData.requestedFormats ?? ['pdf', 'xlsx']) as string[];
+    const allDone = requested.every((fmt) => !!updated[`${fmt}S3`]);
+    if (allDone && updated.status === 'DRAFT') {
       await (this.prisma as any).report.update({
         where: { id: report.id },
-        data: { status: 'GENERATED', generatedAt: new Date() },
+        data: { status: 'IN_REVIEW' },
       });
     }
     this.logger.log(`Wrote ${format} report ${reportId} -> s3://${bucket}/${key}`);

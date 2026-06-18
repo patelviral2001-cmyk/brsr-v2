@@ -591,7 +591,6 @@ model EntityNode {
   @@unique([tenantId, code])
   @@index([tenantId, parentId])
   @@index([tenantId, type])
-  @@index([tenantId, deletedAt])
   @@index([tenantId, country])
   @@map("entity_node")
 }

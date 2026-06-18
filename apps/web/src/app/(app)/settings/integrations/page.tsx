@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/common/page-header";
+import { toast } from "sonner";
 
 const INTEGRATIONS = [
   { name: "SAP S/4HANA", category: "ERP", desc: "OData connector · AP, GL, master data", status: "CONNECTED", at: "2025-06-12" },
@@ -33,9 +34,32 @@ export default function IntegrationsPage() {
               </div>
               <p className="mt-2 text-xs text-slate-500">{i.desc}</p>
               <div className="mt-3">
-                {i.status === "CONNECTED"
-                  ? <Button variant="outline" size="sm">Configure</Button>
-                  : <Button size="sm">Connect</Button>}
+                {i.status === "CONNECTED" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      toast.info(`Configure ${i.name}`, {
+                        description: "Connection settings open in a side panel in v2.1.",
+                      })
+                    }
+                    aria-label={`Configure ${i.name}`}
+                  >
+                    Configure
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      toast.info(`Connect ${i.name}`, {
+                        description: "Connection wizard ships in v2.1. Contact your CSM to enable now.",
+                      })
+                    }
+                    aria-label={`Connect ${i.name}`}
+                  >
+                    Connect
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

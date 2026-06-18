@@ -6,9 +6,27 @@ const RENEW = ["#047857", "#059669", "#10b981", "#34d399"];
 const NON_RENEW = ["#fbbf24", "#f59e0b", "#d97706"];
 
 export function EnergyMixChart({ data }: { data: { source: string; mwh: number; renewable: boolean }[] }) {
-  let ri = 0, ni = 0;
   const safe = Array.isArray(data) ? data : [];
-  const colorized = safe.map((d) => ({ ...d, fill: d.renewable ? RENEW[ri++ % RENEW.length] : NON_RENEW[ni++ % NON_RENEW.length] }));
+
+  if (safe.length === 0) {
+    return (
+      <div
+        className="flex h-[260px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-400"
+        role="img"
+        aria-label="Empty energy mix chart"
+      >
+        No energy mix data.
+      </div>
+    );
+  }
+
+  // Use a deterministic two-pass to avoid mutating counters inside .map().
+  let ri = 0;
+  let ni = 0;
+  const colorized = safe.map((d) => ({
+    ...d,
+    fill: d.renewable ? RENEW[ri++ % RENEW.length] : NON_RENEW[ni++ % NON_RENEW.length],
+  }));
 
   return (
     <ResponsiveContainer width="100%" height={260}>

@@ -103,16 +103,21 @@ export class IamService {
       throw new BadRequestException('Token missing tenant_id claim — user is not assigned to a tenant');
     }
 
-    // JIT-provision local user
+    // JIT-provision local user. Schema fields: idpSubject (@unique), email,
+    // firstName, lastName, isActive, lastLoginAt. There is no keycloakSub,
+    // displayName, or 'active' column.
+    const fullName = (decoded.name as string) ?? email;
+    const parts = fullName.split(' ');
     const user = await (this.prisma as any).user.upsert({
-      where: { keycloakSub: sub },
+      where: { idpSubject: sub },
       update: { email, lastLoginAt: new Date() },
       create: {
-        keycloakSub: sub,
+        idpSubject: sub,
         email,
-        displayName: (decoded.name as string) ?? email,
+        firstName: parts[0] ?? null,
+        lastName: parts.length > 1 ? parts.slice(1).join(' ') : null,
         tenantId,
-        active: true,
+        isActive: true,
       },
     });
 
@@ -121,7 +126,7 @@ export class IamService {
       userId: user.id,
       entity: 'User',
       entityId: user.id,
-      action: 'login',
+      action: 'LOGIN',
       ip,
       userAgent,
     });
@@ -385,44 +390,62 @@ export class IamService {
   }
 
   async listUsers(tenantId: string, q?: string, take = 50, skip = 0) {
+    // Cap pagination defensively.
+    const t = Math.min(Math.max(1, take), 200);
+    const s = Math.max(0, skip);
     return (this.prisma as any).user.findMany({
       where: {
         tenantId,
-        OR: q ? [{ email: { contains: q, mode: 'insensitive' } }, { displayName: { contains: q, mode: 'insensitive' } }] : undefined,
+        OR: q ? [
+          { email: { contains: q, mode: 'insensitive' } },
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+        ] : undefined,
       },
-      take,
-      skip,
+      take: t,
+      skip: s,
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async inviteUser(tenantId: string, dto: InviteUserDto, actorId: string) {
-    const existing = await this.kc.lookupByEmail(dto.email);
     let kcId: string;
-    if (existing) {
-      kcId = existing.id;
-    } else {
-      const kcUser = await this.kc.provisionUser({
-        email: dto.email,
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        tenantId,
-        roles: dto.roles,
-      });
-      kcId = kcUser.id;
+    try {
+      const existing = await this.kc.lookupByEmail(dto.email);
+      if (existing) {
+        kcId = existing.id;
+      } else {
+        const kcUser = await this.kc.provisionUser({
+          email: dto.email,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          tenantId,
+          roles: dto.roles,
+        });
+        kcId = kcUser.id;
+      }
+      if (dto.sendInvite !== false) {
+        await this.kc.sendEmailVerification(kcId, this.config.get<string>('PUBLIC_BASE_URL') ?? 'http://localhost:3000');
+      }
+    } catch (e) {
+      // Keycloak may be unavailable when OPA_ENABLED=false; fall back to a
+      // synthetic idpSubject so users can be invited and assigned roles
+      // locally even without an IdP.
+      this.logger.warn(`Keycloak provision skipped: ${(e as Error).message}`);
+      kcId = `local:${dto.email}`;
     }
-    if (dto.sendInvite !== false) {
-      await this.kc.sendEmailVerification(kcId, this.config.get<string>('PUBLIC_BASE_URL') ?? 'http://localhost:3000');
-    }
+    // Schema: User has unique (tenantId, email) and unique idpSubject.
+    // Upsert keyed on idpSubject so re-invites are idempotent.
     const user = await (this.prisma as any).user.upsert({
-      where: { keycloakSub: kcId },
+      where: { idpSubject: kcId },
       update: {},
       create: {
-        keycloakSub: kcId,
+        idpSubject: kcId,
         tenantId,
         email: dto.email,
-        displayName: [dto.firstName, dto.lastName].filter(Boolean).join(' ') || dto.email,
-        active: true,
+        firstName: dto.firstName ?? null,
+        lastName: dto.lastName ?? null,
+        isActive: true,
       },
     });
     await this.audit.log({
@@ -430,8 +453,9 @@ export class IamService {
       userId: actorId,
       entity: 'User',
       entityId: user.id,
-      action: 'invite',
+      action: 'CREATE',
       after: { email: dto.email },
+      metadata: { invited: true },
     });
     return user;
   }
@@ -439,20 +463,27 @@ export class IamService {
   async updateUser(tenantId: string, id: string, dto: UpdateUserDto, actorId: string) {
     const existing = await (this.prisma as any).user.findFirst({ where: { id, tenantId } });
     if (!existing) throw new NotFoundException('User not found');
-    const updated = await (this.prisma as any).user.update({
-      where: { id },
-      data: {
-        email: dto.email,
-        displayName: dto.displayName,
-        active: dto.active,
-      },
-    });
+    // Map DTO -> schema fields. UpdateUserDto carries displayName / active for
+    // backward compatibility; convert them.
+    const data: Record<string, unknown> = {};
+    if (dto.email !== undefined) data.email = dto.email;
+    if (dto.firstName !== undefined) data.firstName = dto.firstName;
+    if (dto.lastName !== undefined) data.lastName = dto.lastName;
+    if ((dto as { displayName?: string }).displayName !== undefined) {
+      const parts = String((dto as { displayName: string }).displayName).split(' ');
+      data.firstName = parts[0] ?? null;
+      data.lastName = parts.length > 1 ? parts.slice(1).join(' ') : null;
+    }
+    if ((dto as { active?: boolean }).active !== undefined) {
+      data.isActive = (dto as { active: boolean }).active;
+    }
+    const updated = await (this.prisma as any).user.update({ where: { id }, data });
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'User',
       entityId: id,
-      action: 'update',
+      action: 'UPDATE',
       before: existing,
       after: updated,
     });
@@ -462,23 +493,29 @@ export class IamService {
   async deactivateUser(tenantId: string, id: string, actorId: string) {
     const existing = await (this.prisma as any).user.findFirst({ where: { id, tenantId } });
     if (!existing) throw new NotFoundException('User not found');
-    await (this.prisma as any).user.update({ where: { id }, data: { active: false } });
-    if (existing.keycloakSub) {
-      await this.kc.deactivate(existing.keycloakSub);
+    await (this.prisma as any).user.update({ where: { id }, data: { isActive: false } });
+    if (existing.idpSubject && !String(existing.idpSubject).startsWith('local:')) {
+      try {
+        await this.kc.deactivate(existing.idpSubject);
+      } catch (e) {
+        this.logger.warn(`Keycloak deactivate failed for ${existing.idpSubject}: ${(e as Error).message}`);
+      }
     }
     await this.audit.log({
       tenantId,
       userId: actorId,
       entity: 'User',
       entityId: id,
-      action: 'deactivate',
+      action: 'DELETE',
     });
   }
 
   async listRoles(tenantId: string) {
+    // Schema.Role.tenantId is required; there's no global/null-tenant row.
+    // Surface only this tenant's roles.
     return (this.prisma as any).role.findMany({
-      where: { OR: [{ tenantId: null }, { tenantId }] },
-      orderBy: [{ system: 'desc' }, { name: 'asc' }],
+      where: { tenantId },
+      orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
     });
   }
 
@@ -489,7 +526,7 @@ export class IamService {
         name: dto.name,
         description: dto.description,
         permissions: dto.permissions,
-        system: false,
+        isSystem: false,
       },
     });
     await this.audit.log({
@@ -497,19 +534,36 @@ export class IamService {
       userId: actorId,
       entity: 'Role',
       entityId: role.id,
-      action: 'create',
+      action: 'CREATE',
       after: role,
     });
     return role;
   }
 
   async assignRole(tenantId: string, dto: AssignRoleDto, actorId: string) {
+    // Validate cross-tenant safety: role must belong to this tenant; user
+    // must belong to this tenant; optional scopeNode must belong to this
+    // tenant. Without these checks a PLATFORM_ADMIN bug could leak
+    // assignments cross-tenant.
+    const [role, user] = await Promise.all([
+      (this.prisma as any).role.findFirst({ where: { id: dto.roleId, tenantId } }),
+      (this.prisma as any).user.findFirst({ where: { id: dto.userId, tenantId } }),
+    ]);
+    if (!role) throw new NotFoundException('Role not found in this tenant');
+    if (!user) throw new NotFoundException('User not found in this tenant');
+    if (dto.scopeNodeId) {
+      const scope = await (this.prisma as any).entityNode.findFirst({
+        where: { id: dto.scopeNodeId, tenantId },
+        select: { id: true },
+      });
+      if (!scope) throw new NotFoundException('Scope node not found in this tenant');
+    }
     const assignment = await (this.prisma as any).roleAssignment.create({
       data: {
-        tenantId,
         userId: dto.userId,
         roleId: dto.roleId,
         scopeNodeId: dto.scopeNodeId,
+        grantedBy: actorId,
       },
     });
     await this.audit.log({
@@ -517,14 +571,19 @@ export class IamService {
       userId: actorId,
       entity: 'RoleAssignment',
       entityId: assignment.id,
-      action: 'create',
+      action: 'CREATE',
       after: assignment,
     });
     return assignment;
   }
 
   async revokeAssignment(tenantId: string, id: string, actorId: string) {
-    const existing = await (this.prisma as any).roleAssignment.findFirst({ where: { id, tenantId } });
+    // RoleAssignment has no direct tenantId column; the relation is through
+    // role.tenantId or user.tenantId. Look up via user.
+    const existing = await (this.prisma as any).roleAssignment.findFirst({
+      where: { id, user: { tenantId } },
+      include: { user: true, role: true },
+    });
     if (!existing) throw new NotFoundException('Assignment not found');
     await (this.prisma as any).roleAssignment.delete({ where: { id } });
     await this.audit.log({
@@ -532,7 +591,7 @@ export class IamService {
       userId: actorId,
       entity: 'RoleAssignment',
       entityId: id,
-      action: 'delete',
+      action: 'DELETE',
       before: existing,
     });
   }

@@ -13,6 +13,18 @@ export function FrameworkCompletionRings({ data, size = 220 }: { data: RingData[
   const gap = 4;
   const safe = Array.isArray(data) ? data : [];
 
+  if (safe.length === 0) {
+    return (
+      <div
+        className="flex h-[220px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-400"
+        role="img"
+        aria-label="No framework completion data"
+      >
+        No frameworks selected.
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center">
       <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full">
@@ -22,7 +34,8 @@ export function FrameworkCompletionRings({ data, size = 220 }: { data: RingData[
           const r = (size / 2) - 14 - i * (ringStroke + gap);
           if (r < 18) return null;
           const c = 2 * Math.PI * r;
-          const dash = c * (d.pct ?? 0);
+          const pct = Math.max(0, Math.min(1, d.pct ?? 0));
+          const dash = c * pct;
           return (
             <g key={d.id}>
               <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f1f5f9" strokeWidth={ringStroke} />

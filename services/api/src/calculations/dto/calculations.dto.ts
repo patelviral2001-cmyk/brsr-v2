@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -89,7 +90,13 @@ export class ScopeWindowDto {
   outputKeys?: string[];
 }
 
-export class CalcRunRequestDto extends ScopeWindowDto {}
+export class CalcRunRequestDto extends ScopeWindowDto {
+  @ApiPropertyOptional({ description: 'Idempotency key — duplicate requests with the same key are de-duped' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey?: string;
+}
 
 export class Scope3CategoryDto {
   @ApiProperty({ minimum: 1, maximum: 15 })

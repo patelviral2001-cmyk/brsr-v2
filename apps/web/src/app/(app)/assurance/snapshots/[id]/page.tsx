@@ -1,25 +1,47 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/page-header";
+import { EmptyState } from "@/components/common/empty-state";
+import { PageSkeleton } from "@/components/common/loading-skeleton";
 import { WalkthroughViewer } from "@/components/assurance/walkthrough-viewer";
 import { useSnapshots } from "@/lib/api/queries";
 import { STATUS_COLORS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { Hash } from "lucide-react";
+import { Hash, ShieldCheck } from "lucide-react";
 import { formatDate } from "@/lib/format";
 
 export default function SnapshotDetailPage() {
   const params = useParams();
   const id = String(params?.id ?? "");
-  const { data: snapshots } = useSnapshots();
+  const { data: snapshots, isLoading } = useSnapshots();
   const s = snapshots?.find((x) => x.id === id);
+
+  if (isLoading) {
+    return (<div className="p-6"><PageHeader title="Loading snapshot…" /><PageSkeleton /></div>);
+  }
+
+  if (!s) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Snapshot not found" />
+        <EmptyState
+          icon={<ShieldCheck className="h-6 w-6" />}
+          title={`No snapshot with id "${id}"`}
+          description="It may have been pruned, or you may not have access."
+          action={<Button asChild><Link href="/assurance">Back to assurance</Link></Button>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-5">
-      <PageHeader title={`Snapshot ${s?.fy ?? id}`} description={`${s?.framework ?? ""} · ${s?.metricCount ?? 0} metrics`} />
+      <PageHeader title={`Snapshot ${s.fy}`} description={`${s.framework ?? ""} · ${s.metricCount ?? 0} metrics`} />
       {s && (
         <div className="grid gap-4 lg:grid-cols-3">
           <Card>

@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Header, Post, Query, UseGuards, UseInterceptors } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Header, Headers, Post, Query, UseGuards, UseInterceptors } from '@nestjs/common';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { BrsrService } from './brsr.service';
 import { GenerateReportDto, MappingFilterDto, PreviewBrsrDto, ResolveBrsrDto } from './dto/brsr.dto';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
@@ -38,7 +38,12 @@ export class BrsrController {
   @UseGuards(AbacGuard)
   @RequirePermissions('report.generate')
   @Audit({ entity: 'Report', action: 'generate' })
-  generate(@CurrentUser() user: AuthenticatedUser, @Body() dto: GenerateReportDto) {
-    return this.svc.generate(user.tenantId, dto, user.id);
+  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Client-supplied dedupe key' })
+  generate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: GenerateReportDto,
+    @Headers('idempotency-key') idemKey?: string,
+  ) {
+    return this.svc.generate(user.tenantId, { ...dto, idempotencyKey: idemKey }, user.id);
   }
 }

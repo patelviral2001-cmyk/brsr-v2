@@ -5,13 +5,41 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/page-header";
+import { EmptyState } from "@/components/common/empty-state";
+import { CardSkeleton } from "@/components/common/loading-skeleton";
 import { useFrameworks } from "@/lib/api/queries";
 import { FRAMEWORKS } from "@/lib/constants";
 import { formatRelative } from "@/lib/format";
-import { CalendarClock, FileBarChart2 } from "lucide-react";
+import { AlertTriangle, CalendarClock, FileBarChart2, Layers } from "lucide-react";
 
 export default function FrameworksPage() {
-  const { data: frameworks } = useFrameworks();
+  const { data: frameworks, isLoading, isError, error, refetch } = useFrameworks();
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-5">
+        <PageHeader title="Frameworks" description="Track multi-framework readiness" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
+        </div>
+      </div>
+    );
+  }
+  if (isError) {
+    return (
+      <div className="p-6 space-y-5">
+        <PageHeader title="Frameworks" description="Track multi-framework readiness" />
+        <EmptyState
+          icon={<AlertTriangle className="h-6 w-6" />}
+          title="Couldn't load frameworks"
+          description={error instanceof Error ? error.message : "Please try again."}
+          action={<Button onClick={() => refetch()}>Try again</Button>}
+        />
+      </div>
+    );
+  }
+
+  const list = Array.isArray(frameworks) ? frameworks : [];
 
   return (
     <div className="p-6 space-y-5">
@@ -21,8 +49,15 @@ export default function FrameworksPage() {
         actions={<Button size="sm" asChild><Link href="/reports/generate"><FileBarChart2 className="h-4 w-4" />Generate Report</Link></Button>}
       />
 
+      {list.length === 0 ? (
+        <EmptyState
+          icon={<Layers className="h-6 w-6" />}
+          title="No frameworks enabled yet"
+          description="Enable a framework from your tenant settings to start tracking readiness."
+        />
+      ) : (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {(Array.isArray(frameworks) ? frameworks : []).map((f) => {
+        {list.map((f) => {
           const meta = FRAMEWORKS.find((x) => x.id === f.id);
           const status = f.status ?? "ON_TRACK";
           return (
@@ -69,6 +104,7 @@ export default function FrameworksPage() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
@@ -76,14 +112,17 @@ export default function FrameworksPage() {
 function CompletionRing({ value, color }: { value: number; color: string }) {
   const r = 22;
   const c = 2 * Math.PI * r;
-  const dash = c * (value / 100);
+  // Clamp value to [0, 100] so a malformed payload doesn't produce a negative
+  // or overflowing dash array.
+  const pct = Math.max(0, Math.min(100, value));
+  const dash = c * (pct / 100);
   return (
     <div className="relative h-14 w-14">
       <svg viewBox="0 0 56 56" className="-rotate-90">
         <circle cx="28" cy="28" r={r} stroke="#e2e8f0" strokeWidth={5} fill="none" />
         <circle cx="28" cy="28" r={r} stroke={color} strokeWidth={5} strokeLinecap="round" fill="none" strokeDasharray={`${dash} ${c - dash}`} />
       </svg>
-      <div className="absolute inset-0 flex items-center justify-center text-xs font-bold tabular-nums" style={{ color }}>{value}%</div>
+      <div className="absolute inset-0 flex items-center justify-center text-xs font-bold tabular-nums" style={{ color }}>{Math.round(pct)}%</div>
     </div>
   );
 }

@@ -18,15 +18,17 @@ export class CopilotService {
   ) {}
 
   async createConversation(tenantId: string, dto: CreateConversationDto, userId: string) {
+    // Schema CopilotConversation: tenantId, userId, title, createdAt,
+    // lastMessageAt. There is no `context` column.
     const c = await (this.prisma as any).copilotConversation.create({
-      data: { tenantId, userId, title: dto.title, context: dto.context ?? {} },
+      data: { tenantId, userId, title: dto.title },
     });
     await this.audit.log({
       tenantId,
       userId,
       entity: 'CopilotConversation',
       entityId: c.id,
-      action: 'create',
+      action: 'CREATE',
     });
     return c;
   }
@@ -34,7 +36,7 @@ export class CopilotService {
   async listConversations(tenantId: string, userId: string) {
     return (this.prisma as any).copilotConversation.findMany({
       where: { tenantId, userId },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { lastMessageAt: 'desc' },
     });
   }
 
@@ -46,6 +48,7 @@ export class CopilotService {
     return (this.prisma as any).copilotMessage.findMany({
       where: { conversationId },
       orderBy: { createdAt: 'asc' },
+      take: 500,
     });
   }
 
@@ -69,8 +72,10 @@ export class CopilotService {
       return;
     }
 
+    // Schema CopilotMessage: conversationId, role (USER|ASSISTANT|SYSTEM|TOOL),
+    // content. No tenantId on the message — the parent conversation carries it.
     await (this.prisma as any).copilotMessage.create({
-      data: { conversationId, tenantId, role: 'user', content: dto.content },
+      data: { conversationId, role: 'USER', content: dto.content },
     });
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -97,7 +102,9 @@ export class CopilotService {
           tenant_id: tenantId,
           user_id: userId,
           message: dto.content,
-          context: conv.context,
+          // schema has no per-conversation context column; pass an empty
+          // object so the upstream contract stays stable.
+          context: {},
         },
         { headers, responseType: 'stream', timeout: 120_000 },
       );
@@ -122,12 +129,12 @@ export class CopilotService {
         const distilled = distillAssistantText(assistantBuffer);
         if (distilled.length) {
           await (this.prisma as any).copilotMessage.create({
-            data: { conversationId, tenantId, role: 'assistant', content: distilled },
+            data: { conversationId, role: 'ASSISTANT', content: distilled },
           });
         }
         await (this.prisma as any).copilotConversation.update({
           where: { id: conversationId },
-          data: { updatedAt: new Date() },
+          data: { lastMessageAt: new Date() },
         });
       } catch (persistErr) {
         this.logger.warn(`Failed to persist assistant message: ${(persistErr as Error).message}`);
