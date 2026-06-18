@@ -37,6 +37,21 @@ function normalizeDocType(docType?: string): string {
   return KNOWN_DOC_TYPES.has(up) ? up : 'OTHER';
 }
 
+const EXT_TO_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls: 'application/vnd.ms-excel',
+  csv: 'text/csv',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+};
+
+function mimeFromExtension(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  return EXT_TO_MIME[ext] ?? 'application/octet-stream';
+}
+
 @Injectable()
 export class FilesService {
   private readonly logger = new Logger(FilesService.name);
@@ -60,8 +75,16 @@ export class FilesService {
     if (file.size > MAX_BYTES) {
       throw new BadRequestException(`File exceeds 50MB limit (${file.size} bytes)`);
     }
-    if (!ALLOWED_MIME.has(file.mimetype)) {
-      throw new BadRequestException(`Unsupported mime type: ${file.mimetype}`);
+    // Some clients (curl without --form-encode, certain HTTP libraries) ship
+    // application/octet-stream as a catch-all. Fall back to the file
+    // extension so we don't reject legitimate uploads.
+    const effectiveMime = ALLOWED_MIME.has(file.mimetype)
+      ? file.mimetype
+      : mimeFromExtension(file.originalname);
+    if (!ALLOWED_MIME.has(effectiveMime)) {
+      throw new BadRequestException(
+        `Unsupported file. Got mime '${file.mimetype}' for '${file.originalname}'. Allowed: PDF, XLSX, XLS, CSV, PNG, JPG.`,
+      );
     }
 
     const bucket = this.s3.bucketEvidence();
