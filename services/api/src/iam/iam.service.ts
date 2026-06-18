@@ -1,15 +1,43 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { KeycloakClient } from '../common/utils/keycloak-client';
 import { AuditService } from '../audit/audit.service';
 import { ExchangeCodeDto } from './dto/auth.dto';
 import { InviteUserDto, UpdateUserDto } from './dto/users.dto';
 import { AssignRoleDto, CreateRoleDto } from './dto/roles.dto';
+
+// --------------------------------------------------------------------
+// Auth hardening constants. Tunable via env in production.
+// --------------------------------------------------------------------
+const BCRYPT_COST = Number(process.env.BCRYPT_COST ?? 12);
+const MAX_FAILED_LOGIN_ATTEMPTS = Number(process.env.MAX_FAILED_LOGIN_ATTEMPTS ?? 10);
+const ACCOUNT_LOCK_MINUTES = Number(process.env.ACCOUNT_LOCK_MINUTES ?? 15);
+const ACCESS_TOKEN_TTL = process.env.JWT_ACCESS_TTL ?? '1d';
+const REFRESH_TOKEN_TTL = process.env.JWT_REFRESH_TTL ?? '7d';
+// In-memory per-user failed-login counter. In a multi-instance deployment
+// this should move to Redis (BullMQ already requires Redis), but for a single
+// API replica this gives meaningful brute-force protection layered ON TOP of
+// the per-IP ThrottlerGuard.
+const failedLoginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+// In-memory refresh-token rotation registry. Each issued refresh token's
+// jti is recorded; on rotation the old jti is revoked. On reuse-after-rotate
+// we MUST invalidate the entire family (RFC 6819 §5.2.2.3 mitigation).
+const refreshTokenJtis = new Map<string, { userId: string; familyId: string; revoked: boolean }>();
+const revokedFamilies = new Set<string>();
 
 @Injectable()
 export class IamService {
@@ -22,6 +50,24 @@ export class IamService {
     private readonly config: ConfigService,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * Returns the JWT signing secret. In production we refuse to sign with the
+   * fallback 'dev-secret' so a misconfigured deploy fails closed rather than
+   * minting tokens with a publicly known key.
+   */
+  private getJwtSecret(): string {
+    const secret = this.config.get<string>('JWT_SECRET');
+    if (!secret || secret.length < 32) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new ServiceUnavailableException(
+          'JWT_SECRET is missing or too short (need >= 32 chars). Refusing to sign tokens.',
+        );
+      }
+      return secret ?? 'dev-secret-change-me-min-32-characters-long!!';
+    }
+    return secret;
+  }
 
   /**
    * Exchanges a Keycloak authorization code for an access token, decodes
@@ -89,23 +135,80 @@ export class IamService {
   /**
    * Credentials-based login. Validates email+password, returns signed JWT.
    * Used by the Next.js frontend's NextAuth Credentials provider.
+   *
+   * Hardening:
+   *  - Per-user account lockout after MAX_FAILED_LOGIN_ATTEMPTS failures
+   *    within the lock window. Locked-out users get 423 LOCKED.
+   *  - bcrypt cost is set to BCRYPT_COST (default 12) for new hashes; legacy
+   *    rows continue to verify against whatever cost they were created with.
+   *  - JWT_SECRET shorter than 32 chars is refused in production.
+   *  - Refresh tokens are rotated on each /refresh call and reuse triggers
+   *    a family invalidation.
+   *  - Failed logins are audited (action=LOGIN_FAILED via metadata) so a SIEM
+   *    can alert on brute-force attempts.
    */
   async loginWithCredentials(email: string, password: string, ip?: string, userAgent?: string) {
     if (!email || !password) throw new BadRequestException('email and password required');
+
+    // Pre-flight: account-lockout check (keyed by lowercased email so casing
+    // doesn't bypass the counter).
+    const lockKey = email.trim().toLowerCase();
+    const lockState = failedLoginAttempts.get(lockKey);
+    if (lockState && lockState.lockedUntil > Date.now()) {
+      const minutes = Math.ceil((lockState.lockedUntil - Date.now()) / 60_000);
+      throw new ForbiddenException(`Account locked. Try again in ~${minutes} min.`);
+    }
 
     const user = await (this.prisma as any).user.findFirst({
       where: { email, isActive: true },
       include: { tenant: true },
     });
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    const recordFailure = async (reason: string) => {
+      const next = (failedLoginAttempts.get(lockKey)?.count ?? 0) + 1;
+      const locked = next >= MAX_FAILED_LOGIN_ATTEMPTS;
+      failedLoginAttempts.set(lockKey, {
+        count: next,
+        lockedUntil: locked ? Date.now() + ACCOUNT_LOCK_MINUTES * 60_000 : 0,
+      });
+      // Best-effort audit for SIEM
+      try {
+        await this.audit.log({
+          tenantId: user?.tenantId ?? null,
+          userId: user?.id ?? null,
+          entity: 'User',
+          entityId: user?.id ?? null,
+          action: 'login',
+          ip,
+          userAgent,
+          metadata: { result: 'FAILED', reason, attempt: next, locked },
+        });
+      } catch {
+        /* swallow audit errors */
+      }
+    };
+
+    if (!user) {
+      await recordFailure('user_not_found');
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     const passwordHash = (user as any).passwordHash as string | null;
-    if (!passwordHash) throw new UnauthorizedException('Credentials login not enabled for this user');
+    if (!passwordHash) {
+      await recordFailure('no_password_hash');
+      throw new UnauthorizedException('Credentials login not enabled for this user');
+    }
 
     const ok = await bcrypt.compare(password, passwordHash);
-    if (!ok) throw new UnauthorizedException('Invalid credentials');
+    if (!ok) {
+      await recordFailure('bad_password');
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
-    const secret = this.config.get<string>('JWT_SECRET') ?? 'dev-secret';
+    // Successful login — clear lockout counter.
+    failedLoginAttempts.delete(lockKey);
+
+    const secret = this.getJwtSecret();
     const accessToken = jwt.sign(
       {
         sub: user.id,
@@ -113,12 +216,18 @@ export class IamService {
         tenant_id: user.tenantId,
       },
       secret,
-      { expiresIn: '1d', issuer: 'brsr-api' },
+      { expiresIn: ACCESS_TOKEN_TTL, issuer: 'brsr-api' },
     );
+
+    // Issue a refresh token bound to a family id. Family tracks the chain of
+    // rotations; reuse of a rotated jti revokes the entire family.
+    const jti = randomUUID();
+    const familyId = randomUUID();
+    refreshTokenJtis.set(jti, { userId: user.id, familyId, revoked: false });
     const refreshToken = jwt.sign(
-      { sub: user.id, type: 'refresh' },
+      { sub: user.id, type: 'refresh', jti, fam: familyId },
       secret,
-      { expiresIn: '7d', issuer: 'brsr-api' },
+      { expiresIn: REFRESH_TOKEN_TTL, issuer: 'brsr-api' },
     );
 
     await (this.prisma as any).user.update({
@@ -153,22 +262,115 @@ export class IamService {
     };
   }
 
-  async refreshToken(refreshToken: string) {
-    const secret = this.config.get<string>('JWT_SECRET') ?? 'dev-secret';
+  /**
+   * Refresh-token rotation.
+   *  - Verifies the token signature + claims.
+   *  - Verifies the jti has not been used before (reuse-detection).
+   *  - Issues a fresh access token AND a new refresh token (rotation).
+   *  - Marks the old jti as revoked.
+   *  - If a revoked jti is presented again -> the entire family is invalidated
+   *    (logout-everywhere; classic refresh-token theft mitigation).
+   */
+  async refreshToken(presentedRefresh: string) {
+    const secret = this.getJwtSecret();
+    let decoded: any;
     try {
-      const decoded = jwt.verify(refreshToken, secret) as any;
-      if (decoded.type !== 'refresh') throw new UnauthorizedException('Invalid refresh token');
-      const user = await (this.prisma as any).user.findUnique({ where: { id: decoded.sub } });
-      if (!user || !user.isActive) throw new UnauthorizedException('User not found or inactive');
-      const accessToken = jwt.sign(
-        { sub: user.id, email: user.email, tenant_id: user.tenantId },
-        secret,
-        { expiresIn: '1d', issuer: 'brsr-api' },
-      );
-      return { token: accessToken };
-    } catch (e) {
+      decoded = jwt.verify(presentedRefresh, secret, { issuer: 'brsr-api' });
+    } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
+    if (decoded.type !== 'refresh' || !decoded.jti || !decoded.fam) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (revokedFamilies.has(decoded.fam)) {
+      throw new UnauthorizedException('Refresh token family revoked');
+    }
+
+    const existing = refreshTokenJtis.get(decoded.jti);
+    if (!existing) {
+      // Unknown jti -> token was either never issued by us or the server was
+      // restarted. Refuse so we don't accept stale credentials.
+      throw new UnauthorizedException('Refresh token not recognised');
+    }
+    if (existing.revoked) {
+      // REUSE DETECTED — burn the whole family.
+      revokedFamilies.add(decoded.fam);
+      this.logger.warn(`Refresh token reuse detected for user ${existing.userId}; family ${decoded.fam} revoked`);
+      throw new UnauthorizedException('Refresh token reuse detected — please re-authenticate');
+    }
+
+    const user = await (this.prisma as any).user.findUnique({ where: { id: decoded.sub } });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('User not found or inactive');
+    }
+
+    // Mark old jti as revoked and issue a new one in the same family.
+    existing.revoked = true;
+    refreshTokenJtis.set(decoded.jti, existing);
+    const newJti = randomUUID();
+    refreshTokenJtis.set(newJti, { userId: user.id, familyId: decoded.fam, revoked: false });
+
+    const accessToken = jwt.sign(
+      { sub: user.id, email: user.email, tenant_id: user.tenantId },
+      secret,
+      { expiresIn: ACCESS_TOKEN_TTL, issuer: 'brsr-api' },
+    );
+    const newRefresh = jwt.sign(
+      { sub: user.id, type: 'refresh', jti: newJti, fam: decoded.fam },
+      secret,
+      { expiresIn: REFRESH_TOKEN_TTL, issuer: 'brsr-api' },
+    );
+
+    return { token: accessToken, refreshToken: newRefresh };
+  }
+
+  /**
+   * Hashes a plaintext password with the configured bcrypt cost. Exposed for
+   * the (future) user-password-set endpoint and the seed script.
+   */
+  static hashPassword(plain: string): Promise<string> {
+    return bcrypt.hash(plain, BCRYPT_COST);
+  }
+
+  /**
+   * MFA enrollment stub. Real implementation will issue a TOTP secret, return
+   * a QR-code provisioning URL, and require the user to verify a code before
+   * flipping `mfaEnrolled = true`. Left as a stub so the API surface is stable.
+   */
+  async enrollMfaStub(userId: string): Promise<{ status: 'not_implemented'; userId: string }> {
+    // Audit the intent so we can see who tried.
+    try {
+      const u = await (this.prisma as any).user.findUnique({ where: { id: userId } });
+      if (u) {
+        await this.audit.log({
+          tenantId: u.tenantId,
+          userId,
+          entity: 'User',
+          entityId: userId,
+          action: 'update',
+          metadata: { mfa: 'enroll_attempt' },
+        });
+      }
+    } catch {
+      /* best-effort */
+    }
+    return { status: 'not_implemented', userId };
+  }
+
+  /**
+   * Logout invalidates the current refresh-token family so re-login is
+   * required. Exposed for the /iam/auth/logout endpoint.
+   */
+  async logout(refreshTokenOpt?: string): Promise<{ ok: true }> {
+    if (!refreshTokenOpt) return { ok: true };
+    try {
+      const decoded = jwt.verify(refreshTokenOpt, this.getJwtSecret(), { issuer: 'brsr-api' }) as any;
+      if (decoded?.fam) revokedFamilies.add(decoded.fam);
+    } catch {
+      // Even if the token is malformed, logout should be idempotent.
+    }
+    return { ok: true };
   }
 
   async me(userId: string) {

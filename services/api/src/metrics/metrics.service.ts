@@ -30,7 +30,7 @@ export class MetricsService {
   // ---- Registry ----
 
   async listRegistry(filter: { category?: string; framework?: string }) {
-    return (this.prisma as any).metricRegistry.findMany({
+    return (this.prisma as any).canonicalMetric.findMany({
       where: {
         category: filter.category,
         frameworks: filter.framework ? { has: filter.framework } : undefined,
@@ -40,7 +40,7 @@ export class MetricsService {
   }
 
   async getRegistry(canonicalKey: string) {
-    const reg = await (this.prisma as any).metricRegistry.findFirst({
+    const reg = await (this.prisma as any).canonicalMetric.findFirst({
       where: { canonicalKey },
       include: { mappings: true },
     });
@@ -51,7 +51,7 @@ export class MetricsService {
   // ---- Events ----
 
   async create(tenantId: string, dto: CreateMetricEventDto, actorId: string) {
-    const reg = await (this.prisma as any).metricRegistry.findFirst({
+    const reg = await (this.prisma as any).canonicalMetric.findFirst({
       where: { canonicalKey: dto.canonicalKey },
     });
     if (!reg) throw new BadRequestException(`Unknown metric: ${dto.canonicalKey}`);
@@ -97,7 +97,6 @@ export class MetricsService {
         periodStart: dto.from ? { gte: new Date(dto.from) } : undefined,
         periodEnd: dto.to ? { lte: new Date(dto.to) } : undefined,
         status: dto.status && dto.status.length ? { in: dto.status } : undefined,
-        deletedAt: null,
       },
       orderBy: { periodEnd: 'desc' },
       take: dto.take ?? 200,
@@ -135,7 +134,7 @@ export class MetricsService {
 
   async findOne(tenantId: string, id: string) {
     const e = await (this.prisma as any).metricEvent.findFirst({
-      where: { id, tenantId, deletedAt: null },
+      where: { id, tenantId },
     });
     if (!e) throw new NotFoundException('Metric event not found');
     return e;

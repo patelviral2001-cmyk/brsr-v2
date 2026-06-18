@@ -275,10 +275,18 @@ export class FilesService {
 
   async reprocess(tenantId: string, id: string, actorId: string) {
     const doc = await this.findOne(tenantId, id);
-    await (this.prisma as any).extractionField.deleteMany({ where: { documentId: id } });
-    await (this.prisma as any).document.update({
-      where: { id },
-      data: { status: 'UPLOADED', confidenceComposite: null, lastError: null },
+    // Atomic: clear extraction state and reset status in one transaction so
+    // a partial failure can't leave the document in an inconsistent state.
+    await this.prisma.$transaction(async (tx) => {
+      await (tx as any).extractionField.deleteMany({ where: { documentId: id, tenantId } });
+      await (tx as any).document.update({
+        where: { id },
+        // Document model in schema has only DocStatus: PENDING|CLASSIFIED|EXTRACTED|REVIEW_NEEDED|APPROVED|REJECTED.
+        // 'UPLOADED' is not a valid status — use PENDING. classifierConfidence
+        // (not confidenceComposite) is the schema column; lastError does not
+        // exist on Document.
+        data: { status: 'PENDING', classifierConfidence: null },
+      });
     });
     void this.dispatchExtraction(id, tenantId, doc.s3Key, doc.docType ?? undefined);
     await this.audit.log({
@@ -286,7 +294,8 @@ export class FilesService {
       userId: actorId,
       entity: 'Document',
       entityId: id,
-      action: 'reprocess',
+      action: 'EXTRACT',
+      metadata: { reprocess: true },
     });
     return { ok: true };
   }

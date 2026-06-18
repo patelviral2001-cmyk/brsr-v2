@@ -156,8 +156,12 @@ const SECTION_A: BrsrDisclosure[] = [
     unit: "pct",
     is_mandatory: true,
     is_brsr_core: true,
-    mapped_canonical_keys: ["employee_turnover", "employee_count_total"],
-    formula: "m.employee_turnover / m.employee_count_total * 100",
+    // BRSR defines turnover rate = exits / average permanent headcount * 100.
+    // employee_count_perm is the right denominator (NOT total which includes contract/temp).
+    // Use ternary guard to avoid divide-by-zero when headcount is missing.
+    mapped_canonical_keys: ["employee_turnover", "employee_count_perm"],
+    formula:
+      "m.employee_count_perm > 0 ? (m.employee_turnover / m.employee_count_perm * 100) : 0",
     narrative_template:
       "Turnover for the year was {{metric.employee_turnover}} ({{calc.turnover_pct}}%) of average permanent headcount.",
   }),
@@ -392,8 +396,9 @@ const P2: BrsrDisclosure[] = [
     is_mandatory: false,
     is_brsr_core: false,
     mapped_canonical_keys: ["recycled_materials_tonnes", "virgin_materials_tonnes"],
+    // Guard the divisor: when both totals are 0 the ratio is undefined, not 0/0.
     formula:
-      "m.recycled_materials_tonnes / (m.recycled_materials_tonnes + m.virgin_materials_tonnes) * 100",
+      "(m.recycled_materials_tonnes + m.virgin_materials_tonnes) > 0 ? (m.recycled_materials_tonnes / (m.recycled_materials_tonnes + m.virgin_materials_tonnes) * 100) : 0",
     narrative_template:
       "Recycled inputs accounted for {{calc.recycled_pct}}% of total raw materials.",
   }),
@@ -596,10 +601,13 @@ const P3: BrsrDisclosure[] = [
     unit: "count",
     is_mandatory: true,
     is_brsr_core: true,
-    mapped_canonical_keys: ["fatality_count_employees", "fatality_count_contractors"],
-    formula: "m.fatality_count_employees + m.fatality_count_contractors",
+    // Recordable injuries are tracked by TRIFR (per million man-hours);
+    // absolute count = trifr * hours_worked / 1e6. We map trifr as the
+    // primary metric; fatalities are reported in P3.E.11.c, not here.
+    mapped_canonical_keys: ["trifr"],
+    formula: "m.trifr",
     narrative_template:
-      "There were {{metric.fatality_count_employees}} employee and {{metric.fatality_count_contractors}} contractor fatalities.",
+      "Total recordable injury frequency rate (TRIFR) was {{metric.trifr}} per million man-hours worked.",
   }),
   d({
     section_id: "P3.E.11.c",
@@ -1207,7 +1215,9 @@ const P6: BrsrDisclosure[] = [
     response_type: "TABLE",
     unit: "kl",
     is_mandatory: false,
-    is_brsr_core: true,
+    // BRSR Core covers Essential indicators only; Leadership disclosures
+    // are not part of the assured Core subset.
+    is_brsr_core: false,
     mapped_canonical_keys: [
       "water_withdrawn_total_kl",
       "water_consumed_kl",
@@ -1225,7 +1235,9 @@ const P6: BrsrDisclosure[] = [
     response_type: "TABLE",
     unit: "tco2e",
     is_mandatory: false,
-    is_brsr_core: true,
+    // Scope 3 disclosure is a Leadership indicator and is NOT included in
+    // SEBI BRSR Core (the assured Essential subset for top-1000 entities).
+    is_brsr_core: false,
     mapped_canonical_keys: SCOPE3_KEYS(),
     formula: SCOPE3_SUM(),
     narrative_template:
@@ -1292,7 +1304,8 @@ const P6: BrsrDisclosure[] = [
     response_type: "PERCENTAGE",
     unit: "pct",
     is_mandatory: false,
-    is_brsr_core: true,
+    // Leadership indicator — not part of BRSR Core.
+    is_brsr_core: false,
     mapped_canonical_keys: [],
     formula: null,
     narrative_template: null,

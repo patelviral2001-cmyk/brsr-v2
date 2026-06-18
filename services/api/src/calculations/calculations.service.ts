@@ -21,7 +21,7 @@ export class CalculationsService {
       where: {
         OR: [{ tenantId: null }, { tenantId }],
         frameworks: framework ? { has: framework } : undefined,
-        deletedAt: null,
+        
       },
       orderBy: [{ outputKey: 'asc' }, { version: 'desc' }],
     });

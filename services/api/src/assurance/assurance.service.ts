@@ -24,7 +24,7 @@ export class AssuranceService {
         tenantId,
         scopeNodeId: { in: dto.scopeNodeIds },
         status: { in: ['APPROVED', 'LOCKED'] },
-        deletedAt: null,
+        
       },
       orderBy: { id: 'asc' },
     });
@@ -99,7 +99,7 @@ export class AssuranceService {
       },
     });
 
-    const sectionMappings = await (this.prisma as any).brsrMapping.findMany({
+    const sectionMappings = await (this.prisma as any).frameworkMapping.findMany({
       where: { framework: snap.framework, canonicalKey: metricKey },
     });
 
@@ -155,14 +155,14 @@ export class AssuranceService {
   // ---- Exceptions ----
 
   async listExceptions(tenantId: string, snapshotId?: string) {
-    return (this.prisma as any).assuranceException.findMany({
+    return (this.prisma as any).auditException.findMany({
       where: { tenantId, snapshotId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async createException(tenantId: string, dto: CreateExceptionDto, actorId: string) {
-    const e = await (this.prisma as any).assuranceException.create({
+    const e = await (this.prisma as any).auditException.create({
       data: {
         tenantId,
         snapshotId: dto.snapshotId,
@@ -186,9 +186,9 @@ export class AssuranceService {
   }
 
   async respondException(tenantId: string, id: string, dto: RespondExceptionDto, actorId: string) {
-    const before = await (this.prisma as any).assuranceException.findFirst({ where: { id, tenantId } });
+    const before = await (this.prisma as any).auditException.findFirst({ where: { id, tenantId } });
     if (!before) throw new NotFoundException('Exception not found');
-    const updated = await (this.prisma as any).assuranceException.update({
+    const updated = await (this.prisma as any).auditException.update({
       where: { id },
       data: {
         response: dto.response,

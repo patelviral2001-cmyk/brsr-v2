@@ -50,9 +50,16 @@ export class OpaClient {
    *
    * We post to /v1/data/brsr and unwrap `result.allow` + `result.reason`.
    */
+  /** Exposed so AbacGuard can decide to apply its RBAC fallback. */
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+
   async allow(input: OpaInput): Promise<OpaDecision> {
     if (!this.enabled) {
-      // Dev/test mode — allow but log so engineers see it
+      // Dev/test mode — allow but log so engineers see it.
+      // NOTE: AbacGuard short-circuits to RBAC when OPA is disabled, so this
+      // branch is only hit if a caller invokes the OPA client directly.
       this.logger.debug(`OPA disabled — granting ${input.action.join(',')}`);
       return { allow: true };
     }

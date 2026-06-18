@@ -22,7 +22,7 @@ export class SuppliersService {
 
   async list(tenantId: string, take = 50, skip = 0) {
     return (this.prisma as any).supplier.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { tenantId },
       orderBy: { createdAt: 'desc' },
       take,
       skip,
@@ -31,7 +31,7 @@ export class SuppliersService {
 
   async findOne(tenantId: string, id: string) {
     const s = await (this.prisma as any).supplier.findFirst({
-      where: { id, tenantId, deletedAt: null },
+      where: { id, tenantId },
     });
     if (!s) throw new NotFoundException('Supplier not found');
     return s;
@@ -125,7 +125,7 @@ export class SuppliersService {
       throw new BadRequestException('Invalid or expired token');
     }
     const supplier = await (this.prisma as any).supplier.findFirst({
-      where: { id: verified.targetId, tenantId: verified.tenantId, deletedAt: null },
+      where: { id: verified.targetId, tenantId: verified.tenantId },
     });
     if (!supplier) throw new NotFoundException('Supplier not found');
     const invitation = await (this.prisma as any).supplierInvitation.findFirst({

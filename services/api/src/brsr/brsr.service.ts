@@ -26,7 +26,7 @@ export class BrsrService {
   // ---- Mappings ----
 
   async listMappings(filter: MappingFilterDto) {
-    return (this.prisma as any).brsrMapping.findMany({
+    return (this.prisma as any).frameworkMapping.findMany({
       where: { framework: filter.framework, version: filter.version },
       orderBy: [{ framework: 'asc' }, { sectionId: 'asc' }],
     });
@@ -47,7 +47,7 @@ export class BrsrService {
       canonicalKey: string;
       unit: string | null;
       aggregation: 'SUM' | 'AVG' | 'LATEST' | 'FIRST';
-    }[] = await (this.prisma as any).brsrMapping.findMany({
+    }[] = await (this.prisma as any).frameworkMapping.findMany({
       where: { framework: dto.framework, sectionId: dto.section ?? undefined },
       orderBy: { sectionId: 'asc' },
     });
@@ -69,7 +69,7 @@ export class BrsrService {
         periodStart: { gte: periodStart },
         periodEnd: { lte: periodEnd },
         status: { in: ['APPROVED', 'LOCKED'] },
-        deletedAt: null,
+        
         canonicalKey: { in: mappings.map((m) => m.canonicalKey) },
       },
       orderBy: { periodEnd: 'desc' },

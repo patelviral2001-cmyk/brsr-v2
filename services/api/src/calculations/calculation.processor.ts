@@ -43,7 +43,7 @@ export class CalculationProcessor extends WorkerHost {
         await (this.prisma as any).formula.findMany({
           where: {
             OR: [{ tenantId: null }, { tenantId }],
-            deletedAt: null,
+            
             outputKey: run.outputKeys?.length ? { in: run.outputKeys } : undefined,
           },
         });
@@ -51,26 +51,40 @@ export class CalculationProcessor extends WorkerHost {
       // 2. Topologically sort by inputs
       const ordered = topoSortFormulas(formulas);
 
-      // 3. Pre-load all relevant MetricEvents for the period + scope
+      // 3. Pre-load all relevant MetricEvents for the period + scope.
+      // Restrict the canonicalKey set to inputs actually required by the
+      // resolved formulas — otherwise we pull every event for the tenant
+      // (potentially millions of rows) and inflate memory/CPU.
+      const requiredKeys = new Set<string>();
+      for (const f of formulas) for (const k of f.inputs ?? []) requiredKeys.add(k);
       const inputs: { canonicalKey: string; value: Decimal; unit: string }[] = await (this.prisma as any).metricEvent.findMany({
         where: {
           tenantId,
+          canonicalKey: requiredKeys.size > 0 ? { in: Array.from(requiredKeys) } : undefined,
           scopeNodeId: { in: run.scopeNodeIds },
           periodStart: { gte: run.periodStart },
           periodEnd: { lte: run.periodEnd },
           status: { in: ['APPROVED', 'LOCKED'] },
-          deletedAt: null,
+          
         },
         select: { canonicalKey: true, value: true, unit: true },
       });
       const metricCtx: Record<string, CelValue> = {};
-      // Aggregate equal-keyed values by summing
+      // Aggregate equal-keyed values by summing.
+      // CRITICAL: refuse to mix units silently — kWh + MWh would corrupt totals.
+      // Caller is responsible for normalising units at ingest; here we throw
+      // so a unit-mismatched dataset surfaces as a calc error rather than a
+      // wrong number.
       for (const m of inputs) {
         const k = m.canonicalKey;
-        if (!metricCtx[k]) metricCtx[k] = { value: new Decimal(0), unit: m.unit };
-        if (metricCtx[k]?.value instanceof Decimal) {
-          metricCtx[k]!.value = (metricCtx[k]!.value as Decimal).plus(m.value);
+        if (!metricCtx[k]) {
+          metricCtx[k] = { value: new Decimal(0), unit: m.unit };
+        } else if (metricCtx[k]!.unit !== m.unit) {
+          throw new Error(
+            `Unit mismatch for ${k}: ${metricCtx[k]!.unit} vs ${m.unit}. Normalise at ingest.`,
+          );
         }
+        metricCtx[k]!.value = (metricCtx[k]!.value as Decimal).plus(m.value);
       }
 
       // 4. Load emission factors

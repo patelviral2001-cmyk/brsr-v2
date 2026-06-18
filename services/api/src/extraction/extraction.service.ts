@@ -24,11 +24,11 @@ export class ExtractionService {
       where: {
         tenantId,
         documentId: q.documentId,
-        OR: [{ confidence: { lt: new Decimal(maxConf) } }, { status: 'NEEDS_REVIEW' }],
+        OR: [{ confidenceComposite: { lt: maxConf } }, { status: 'NEEDS_REVIEW' }],
         status: q.status ?? { in: ['NEEDS_REVIEW', 'AUTO_ACCEPTED'] },
       },
       include: { document: { select: { id: true, originalName: true, docType: true } } },
-      orderBy: [{ confidence: 'asc' }, { createdAt: 'asc' }],
+      orderBy: [{ confidenceComposite: 'asc' }, { createdAt: 'asc' }],
       take: q.take ?? 50,
     });
   }
@@ -145,7 +145,7 @@ export class ExtractionService {
       _count: { _all: true },
     });
     const lowConfidence: number = await (this.prisma as any).extractionField.count({
-      where: { tenantId, confidence: { lt: new Decimal(0.85) }, status: { not: 'APPROVED' } },
+      where: { tenantId, confidenceComposite: { lt: 0.85 }, status: { not: 'APPROVED' } },
     });
     return {
       byStatus: Object.fromEntries(byStatus.map((s) => [s.status, s._count._all])),

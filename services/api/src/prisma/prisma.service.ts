@@ -42,12 +42,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
    * request — TenantInterceptor handles that.
    */
   async setTenantContext(tenantId: string | null, userId?: string | null): Promise<void> {
-    const safeTenant = tenantId?.replace(/'/g, '') ?? '';
-    const safeUser = userId?.replace(/'/g, '') ?? '';
-    // SET LOCAL only applies inside a transaction; use SET for the session
-    await this.$executeRawUnsafe(`SELECT set_config('app.current_tenant_id', '${safeTenant}', false)`);
-    if (safeUser) {
-      await this.$executeRawUnsafe(`SELECT set_config('app.current_user_id', '${safeUser}', false)`);
+    // Hardened: enforce strict id charset and use parameterised query to make
+    // SQL injection impossible even if the JWT decoder is bypassed somehow.
+    const SAFE_ID = /^[a-zA-Z0-9_-]{1,64}$/;
+    const t = tenantId && SAFE_ID.test(tenantId) ? tenantId : '';
+    await this.$executeRaw`SELECT set_config('app.current_tenant_id', ${t}, false)`;
+    if (userId && SAFE_ID.test(userId)) {
+      await this.$executeRaw`SELECT set_config('app.current_user_id', ${userId}, false)`;
     }
   }
 
@@ -89,16 +90,14 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 /**
  * Models that participate in soft-delete. Keep this list curated to avoid
  * silently swallowing rows on ad-hoc tables that don't have the column.
+ *
+ * NOTE: Only Tenant has a `deletedAt` column in the current schema. Other
+ * models historically listed here (User, Document, DataSource, MetricEvent,
+ * Supplier, etc.) DO NOT have `deletedAt` and would crash Prisma at runtime
+ * if we tried to inject the filter. Verified against schema.prisma 2026-06.
  */
 const SOFT_DELETE_MODELS = new Set([
-  'HierarchyNode',
-  'Document',
-  'DataSource',
-  'MetricEvent',
-  'Supplier',
-  'User',
-  'Survey',
-  'AssessmentRun',
+  'Tenant',
 ]);
 
 function modelHasDeletedAt(model: Prisma.ModelName | string | undefined): boolean {

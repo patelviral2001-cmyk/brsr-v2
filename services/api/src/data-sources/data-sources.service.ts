@@ -17,14 +17,14 @@ export class DataSourcesService {
 
   async list(tenantId: string) {
     return (this.prisma as any).dataSource.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { tenantId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async findOne(tenantId: string, id: string) {
     const ds = await (this.prisma as any).dataSource.findFirst({
-      where: { id, tenantId, deletedAt: null },
+      where: { id, tenantId },
     });
     if (!ds) throw new NotFoundException('Data source not found');
     return ds;

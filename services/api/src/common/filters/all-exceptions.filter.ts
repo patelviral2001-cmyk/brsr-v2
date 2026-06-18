@@ -2,6 +2,7 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logge
 import { Prisma } from '@prisma/client';
 import { Logger } from 'nestjs-pino';
 import { trace, context as otelContext } from '@opentelemetry/api';
+import { AxiosError } from 'axios';
 
 /**
  * Standardised error response with Pino structured logging.
@@ -41,8 +42,34 @@ export class AllExceptionsFilter implements ExceptionFilter {
       status = HttpStatus.BAD_REQUEST;
       code = 'PRISMA_VALIDATION';
       message = exception.message.split('\n').slice(-3).join(' ');
+    } else if (isAxiosError(exception)) {
+      const ax = exception as AxiosError;
+      status = ax.response?.status && ax.response.status >= 400 && ax.response.status < 600
+        ? ax.response.status
+        : HttpStatus.BAD_GATEWAY;
+      code = status >= 500 ? 'UPSTREAM_ERROR' : 'UPSTREAM_REJECTED';
+      message = `Upstream call failed: ${ax.message}`;
+    } else if (isTimeoutError(exception)) {
+      status = HttpStatus.GATEWAY_TIMEOUT;
+      code = 'UPSTREAM_TIMEOUT';
+      message = (exception as Error).message || 'Operation timed out';
+    } else if (isAggregateError(exception)) {
+      status = HttpStatus.INTERNAL_SERVER_ERROR;
+      code = 'AGGREGATE_ERROR';
+      const errs = ((exception as { errors?: unknown[] }).errors ?? []).slice(0, 3);
+      message = `Multiple errors (${(exception as { errors?: unknown[] }).errors?.length ?? 0}): ${errs.map((e) => (e instanceof Error ? e.message : String(e))).join('; ')}`;
     } else if (exception instanceof Error) {
       message = exception.message;
+    }
+
+    // SECURITY: never leak raw stack traces or internal error messages on 5xx.
+    if (status >= 500) {
+      details = undefined;
+      // Replace internal detail with a stable, generic message; trace id allows
+      // operators to look up the real cause server-side.
+      if (process.env.NODE_ENV === 'production') {
+        message = 'Internal server error';
+      }
     }
 
     const span = trace.getSpan(otelContext.active());
@@ -94,6 +121,25 @@ function httpStatusToCode(s: number): string {
     default:
       return s >= 500 ? 'INTERNAL_ERROR' : 'ERROR';
   }
+}
+
+function isAxiosError(e: unknown): boolean {
+  return !!(e && typeof e === 'object' && (e as { isAxiosError?: boolean }).isAxiosError === true);
+}
+
+function isTimeoutError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false;
+  const err = e as { name?: string; code?: string };
+  return err.name === 'TimeoutError' || err.code === 'ETIMEDOUT' || err.code === 'ECONNABORTED';
+}
+
+function isAggregateError(e: unknown): boolean {
+  // Node 16+ AggregateError, or any object with an array `errors` field.
+  if (typeof (globalThis as { AggregateError?: unknown }).AggregateError === 'function' &&
+    e instanceof (globalThis as { AggregateError: new () => Error }).AggregateError) {
+    return true;
+  }
+  return !!(e && typeof e === 'object' && Array.isArray((e as { errors?: unknown }).errors));
 }
 
 function mapPrismaError(e: Prisma.PrismaClientKnownRequestError): {

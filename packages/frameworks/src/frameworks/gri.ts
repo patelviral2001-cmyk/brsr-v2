@@ -483,8 +483,10 @@ const EMPLOYMENT: GriDisclosure[] = [
     response_type: "TABLE",
     unit: "count",
     is_mandatory: true,
+    // 401-1 is a TABLE — new hires and turnover are reported separately,
+    // never summed. Null formula keeps both values for the table renderer.
     mapped_canonical_keys: ["employee_new_hires", "employee_turnover"],
-    formula: "m.employee_new_hires + m.employee_turnover",
+    formula: null,
     narrative_template:
       "New hires: {{metric.employee_new_hires}}; exits: {{metric.employee_turnover}}.",
   }),
@@ -719,7 +721,8 @@ const DIVERSITY: GriDisclosure[] = [
     unit: "ratio",
     is_mandatory: true,
     mapped_canonical_keys: ["gender_pay_gap_pct", "median_remuneration_male", "median_remuneration_female"],
-    formula: "m.median_remuneration_female / m.median_remuneration_male",
+    // Guard against zero male median (e.g. all-female unit) — prevents division-by-zero.
+    formula: "m.median_remuneration_male > 0 ? (m.median_remuneration_female / m.median_remuneration_male) : 0",
     narrative_template:
       "Female-to-male median remuneration ratio: {{calc.gender_pay_ratio}}. Gender pay gap: {{metric.gender_pay_gap_pct}}%.",
   }),

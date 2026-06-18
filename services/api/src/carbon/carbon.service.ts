@@ -40,7 +40,7 @@ export class CarbonService {
           periodStart: { gte: new Date(q.from) },
           periodEnd: { lte: new Date(q.to) },
           status: { in: ['APPROVED', 'LOCKED'] },
-          deletedAt: null,
+          
         },
       });
     const totalByKey: Record<string, string> = {};
@@ -173,7 +173,7 @@ export class CarbonService {
       lifetimeYears: number | null;
       discountRate: Decimal | null;
     }[] = await (this.prisma as any).abatementProject.findMany({
-      where: { tenantId, deletedAt: null },
+      where: { tenantId },
     });
     const items = projects.map((p) => {
       const r = p.discountRate ? new Decimal(p.discountRate).div(100) : new Decimal(0.08);

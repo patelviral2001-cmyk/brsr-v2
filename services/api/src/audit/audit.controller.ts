@@ -62,29 +62,43 @@ export class AuditController {
     res.setHeader('content-disposition', `attachment; filename="audit-${user.tenantId}.${format}"`);
 
     if (format === 'csv') {
-      res.write('id,createdAt,userId,entity,entityId,action,requestId\n');
+      res.write('id,createdAt,actorUserId,entityType,entityId,action,ipAddress,requestId\n');
     }
 
-    for await (const batch of this.audit.streamAll(user.tenantId)) {
-      for (const row of batch as Record<string, unknown>[]) {
-        if (format === 'csv') {
-          res.write(
-            [
-              row.id,
-              (row.createdAt as Date)?.toISOString?.() ?? row.createdAt,
-              row.userId ?? '',
-              row.entity,
-              row.entityId ?? '',
-              row.action,
-              row.requestId ?? '',
-            ]
-              .map(csvEscape)
-              .join(',') + '\n',
-          );
-        } else {
-          res.write(JSON.stringify(row) + '\n');
+    try {
+      for await (const batch of this.audit.streamAll(user.tenantId)) {
+        for (const row of batch as Record<string, unknown>[]) {
+          if (format === 'csv') {
+            res.write(
+              [
+                row.id,
+                (row.createdAt as Date)?.toISOString?.() ?? row.createdAt,
+                row.actorUserId ?? '',
+                row.entityType ?? '',
+                row.entityId ?? '',
+                row.action,
+                row.ipAddress ?? '',
+                row.requestId ?? '',
+              ]
+                .map(csvEscape)
+                .join(',') + '\n',
+            );
+          } else {
+            res.write(JSON.stringify(row) + '\n');
+          }
+          // Backpressure-aware streaming: pause when the socket buffer fills.
+          if (!(res as unknown as { write: (s: string) => boolean }).write('')) {
+            await new Promise<void>((resolve) => res.once('drain', () => resolve()));
+          }
         }
       }
+    } catch (e) {
+      // Stream already started; we can't change the status code, but we can
+      // write a trailing JSONL/CSV error marker the client can detect.
+      const errLine = format === 'csv'
+        ? `\n# ERROR ${(e as Error).message}\n`
+        : `\n${JSON.stringify({ error: (e as Error).message })}\n`;
+      try { res.write(errLine); } catch { /* ignore */ }
     }
     res.end();
   }

@@ -1,10 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-
+// Server-side redirect prevents the blank flash of a client useEffect bounce.
 export default function MetricsRegistryRedirect() {
-  const router = useRouter();
-  useEffect(() => { router.replace("/metrics"); }, [router]);
-  return null;
+  redirect("/metrics");
 }

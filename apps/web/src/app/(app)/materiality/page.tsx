@@ -4,16 +4,40 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/common/page-header";
+import { EmptyState } from "@/components/common/empty-state";
+import { PageSkeleton } from "@/components/common/loading-skeleton";
 import { MaterialityMatrix } from "@/components/charts/materiality-matrix";
 import { useMateriality } from "@/lib/api/queries";
-import { Compass, Users2 } from "lucide-react";
+import { AlertTriangle, Compass, Users2 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function MaterialityPage() {
-  const { data } = useMateriality();
+  const router = useRouter();
+  const { data, isLoading, isError, error, refetch } = useMateriality();
   const topics = Array.isArray(data?.topics) ? data.topics : [];
   const stakeholders = Array.isArray(data?.stakeholders) ? data.stakeholders : [];
   const highPriority = topics.filter((t) => t.priority === "HIGH");
+
+  if (isLoading) {
+    return (
+      <div className="p-6"><PageHeader title="Materiality" /><PageSkeleton /></div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <PageHeader title="Materiality" />
+        <EmptyState
+          icon={<AlertTriangle className="h-6 w-6" />}
+          title="Couldn't load materiality"
+          description={error instanceof Error ? error.message : "Please try again."}
+          action={<Button onClick={() => refetch()}>Try again</Button>}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-5">
@@ -23,7 +47,13 @@ export default function MaterialityPage() {
         actions={
           <>
             <Button variant="outline" size="sm" asChild><Link href="/materiality/surveys"><Users2 className="h-4 w-4" />Surveys</Link></Button>
-            <Button size="sm"><Compass className="h-4 w-4" />New Assessment</Button>
+            <Button
+              size="sm"
+              onClick={() => router.push(`/materiality/assessments/new`)}
+              aria-label="Start a new materiality assessment"
+            >
+              <Compass className="h-4 w-4" />New Assessment
+            </Button>
           </>
         }
       />

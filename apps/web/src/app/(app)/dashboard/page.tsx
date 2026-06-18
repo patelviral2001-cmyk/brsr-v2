@@ -89,8 +89,10 @@ export default function DashboardPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {Array.isArray(emissions?.monthlyTrend) && emissions!.monthlyTrend.length > 0 && (
+          {Array.isArray(emissions?.monthlyTrend) && emissions!.monthlyTrend.length > 0 ? (
             <EmissionsTrendChart data={emissions!.monthlyTrend} />
+          ) : (
+            <ChartEmpty label="No emissions data for this period yet" />
           )}
         </CardContent>
       </Card>
@@ -103,8 +105,10 @@ export default function DashboardPage() {
             <CardDescription>96.8% renewable</CardDescription>
           </CardHeader>
           <CardContent>
-            {Array.isArray(emissions?.energyMix) && emissions!.energyMix.length > 0 && (
+            {Array.isArray(emissions?.energyMix) && emissions!.energyMix.length > 0 ? (
               <EnergyMixChart data={emissions!.energyMix} />
+            ) : (
+              <ChartEmpty label="No energy data yet" />
             )}
           </CardContent>
         </Card>
@@ -115,8 +119,10 @@ export default function DashboardPage() {
             <CardDescription>Multi-framework filing readiness</CardDescription>
           </CardHeader>
           <CardContent>
-            {Array.isArray(frameworks) && frameworks.length > 0 && (
+            {Array.isArray(frameworks) && frameworks.length > 0 ? (
               <FrameworkCompletionRings data={frameworks.map((f) => ({ id: f.id, pct: (f.completionPct ?? 0) / 100 }))} />
+            ) : (
+              <ChartEmpty label="No frameworks configured" />
             )}
           </CardContent>
         </Card>
@@ -127,6 +133,9 @@ export default function DashboardPage() {
             <CardDescription>Auto-detected this quarter</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
+            {(Array.isArray(anomalies) ? anomalies : []).length === 0 && (
+              <p className="px-2 py-6 text-center text-xs text-slate-400">No anomalies detected — nice.</p>
+            )}
             {(Array.isArray(anomalies) ? anomalies : []).map((a) => (
               <div key={a.id} className="flex items-start gap-3 rounded-lg border border-slate-200 p-3 transition-colors hover:bg-slate-50">
                 <div className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-full ${a.severity === "HIGH" ? "bg-rose-50 text-rose-700" : a.severity === "MEDIUM" ? "bg-amber-50 text-amber-700" : "bg-slate-50 text-slate-500"}`}>
@@ -156,8 +165,10 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {Array.isArray(netzero?.pathway) && netzero!.pathway.length > 0 && (
+            {Array.isArray(netzero?.pathway) && netzero!.pathway.length > 0 ? (
               <NetZeroPathway data={netzero!.pathway} />
+            ) : (
+              <ChartEmpty label="Set a net-zero target to render the pathway" />
             )}
           </CardContent>
         </Card>
@@ -181,7 +192,10 @@ export default function DashboardPage() {
                     <span className="tabular-nums text-slate-500">{b.value} / {b.total}</span>
                   </div>
                   <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div className={`h-full ${b.color}`} style={{ width: `${(b.value / b.total) * 100}%` }} />
+                    <div
+                      className={`h-full ${b.color}`}
+                      style={{ width: `${b.total > 0 ? Math.min(100, (b.value / b.total) * 100) : 0}%` }}
+                    />
                   </div>
                 </div>
               ))}
@@ -199,6 +213,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
+              {(Array.isArray(activity) ? activity : []).length === 0 && (
+                <p className="px-2 py-6 text-center text-xs text-slate-400">No recent activity in this period.</p>
+              )}
               {(Array.isArray(activity) ? activity : []).map((a) => (
                 <div key={a.id} className="flex items-center gap-3 rounded-lg border border-transparent p-2.5 transition-colors hover:border-slate-200 hover:bg-slate-50">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700">
@@ -239,6 +256,14 @@ export default function DashboardPage() {
         <Sparkles className="h-4 w-4" />
         <span className="text-sm font-medium">Ask Copilot</span>
       </Link>
+    </div>
+  );
+}
+
+function ChartEmpty({ label }: { label: string }) {
+  return (
+    <div className="flex h-[200px] items-center justify-center rounded-lg border border-dashed border-slate-200 text-xs text-slate-400">
+      {label}
     </div>
   );
 }

@@ -32,7 +32,7 @@ export class DashboardResolver {
           periodStart: { gte: period.start },
           periodEnd: { lte: period.end },
           status: { in: ['APPROVED', 'LOCKED'] },
-          deletedAt: null,
+          
           ...(scope ? { scopeNodeId: scope } : {}),
         },
       });
@@ -78,7 +78,7 @@ export class DashboardResolver {
   ): Promise<FacilityComparisonRow[]> {
     const period = parseFy(fy);
     const facilities: { id: string; name: string }[] = await (this.prisma as any).hierarchyNode.findMany({
-      where: { tenantId: user.tenantId, type: 'FACILITY', deletedAt: null },
+      where: { tenantId: user.tenantId, type: 'FACILITY' },
       select: { id: true, name: true },
     });
     const rows: FacilityComparisonRow[] = [];
@@ -142,7 +142,7 @@ export class DashboardResolver {
         periodEnd: { lte: to },
         ...(scopeNodeId ? { scopeNodeId } : {}),
         status: { in: ['APPROVED', 'LOCKED'] },
-        deletedAt: null,
+        
       },
       select: { value: true },
     });

@@ -15,7 +15,7 @@ export class ReportsService {
   async list(tenantId: string, take = 50, skip = 0) {
     return (this.prisma as any).report.findMany({
       where: { tenantId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { generatedAt: 'desc' },
       take,
       skip,
     });

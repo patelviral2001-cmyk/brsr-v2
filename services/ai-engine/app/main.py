@@ -4,11 +4,12 @@ Wires up:
   * structlog
   * OpenTelemetry instrumentation
   * Langfuse callback handler (registered globally for LangChain)
-  * CORS
+  * CORS (locked-down — comma-separated list from CORS_ALLOW_ORIGINS)
   * Lifespan: open Redis + Qdrant clients
   * Routers (extract, validate, feedback)
   * ``/health`` endpoint — liveness + readiness checks (Redis, Qdrant,
     OpenAI key); optional remote OpenAI ping on ``/ready``.
+  * Global exception handler so no stack trace ever leaks to clients.
 """
 from __future__ import annotations
 
@@ -16,12 +17,12 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.utils.logging import configure_logging, get_logger
+from app.utils.logging import configure_logging, get_logger, hash_tenant, redact_pii
 
 configure_logging()
 logger = get_logger("main")
@@ -86,6 +87,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             pass
 
 
+def _parse_origins(raw: str) -> list[str]:
+    """Comma-separated origins; ``*`` allowed in dev only."""
+    parts = [p.strip() for p in (raw or "").split(",") if p.strip()]
+    return parts or ["*"]
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
 
@@ -96,12 +103,24 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    origins = _parse_origins(settings.CORS_ALLOW_ORIGINS)
+    # Production refuses wildcard + credentials simultaneously — fail loud
+    # if a deployment misconfigures it.
+    if settings.ENV != "dev" and "*" in origins:
+        logger.warning(
+            "cors.wildcard_in_non_dev",
+            env=settings.ENV,
+            note="CORS_ALLOW_ORIGINS contains '*' outside dev — locking down",
+        )
+        # In non-dev we refuse the wildcard entirely.
+        origins = [o for o in origins if o != "*"] or ["https://invalid.local"]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=origins,
+        allow_credentials=settings.ENV == "dev",
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-AI-Engine-Version"],
     )
 
     # OpenTelemetry instrumentation.
@@ -111,6 +130,26 @@ def create_app() -> FastAPI:
         FastAPIInstrumentor.instrument_app(app)
     except Exception as e:  # pragma: no cover
         logger.warning("otel.init_failed", err=str(e))
+
+    # ------------------------------------------------------------------
+    # Global exception handler — guarantees no stack trace leaks out of
+    # FastAPI. Returns a generic 500 with a correlation id so on-call can
+    # find the failure in logs.
+    # ------------------------------------------------------------------
+    @app.exception_handler(Exception)
+    async def _unhandled(_req: Request, exc: Exception) -> JSONResponse:  # noqa: ARG001
+        import uuid
+
+        cid = uuid.uuid4().hex[:12]
+        logger.exception(
+            "request.unhandled",
+            correlation_id=cid,
+            err=redact_pii(str(exc)),
+        )
+        return JSONResponse(
+            {"error": "internal_error", "correlation_id": cid},
+            status_code=500,
+        )
 
     # Routers.
     from app.router import extract as extract_router
@@ -138,7 +177,7 @@ def create_app() -> FastAPI:
             else:
                 checks["redis"] = "uninitialised"
         except Exception as e:
-            checks["redis"] = f"err: {e}"
+            checks["redis"] = f"err: {redact_pii(str(e))}"
             checks["ok"] = False
 
         # Qdrant
@@ -149,7 +188,7 @@ def create_app() -> FastAPI:
             else:
                 checks["qdrant"] = "uninitialised"
         except Exception as e:
-            checks["qdrant"] = f"err: {e}"
+            checks["qdrant"] = f"err: {redact_pii(str(e))}"
             checks["ok"] = False
 
         # OpenAI — config-only check. We just confirm a key is set and that
@@ -167,7 +206,7 @@ def create_app() -> FastAPI:
                 checks["openai_model_extractor"] = settings.OPENAI_MODEL_EXTRACTOR
                 checks["openai_model_classifier"] = settings.OPENAI_MODEL_CLASSIFIER
             except Exception as e:
-                checks["openai"] = f"err: {e}"
+                checks["openai"] = f"err: {redact_pii(str(e))}"
                 checks["ok"] = False
 
         status = 200 if checks["ok"] else 503
@@ -211,7 +250,7 @@ def create_app() -> FastAPI:
             checks["openai"] = "ok"
             checks["openai_models_visible"] = count
         except Exception as e:
-            checks["openai"] = f"err: {e}"
+            checks["openai"] = f"err: {redact_pii(str(e))}"
             checks["ok"] = False
         status = 200 if checks["ok"] else 503
         return JSONResponse(checks, status_code=status)

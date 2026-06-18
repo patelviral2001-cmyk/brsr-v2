@@ -86,6 +86,27 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     BACKEND_URL: str = "http://localhost:4000"
     BACKEND_CALLBACK_SECRET: str = "change-me"
+    # Header the backend's InternalCallbackGuard inspects.
+    # Backend currently expects ``x-internal-secret`` — keep these in sync.
+    BACKEND_CALLBACK_HEADER: str = "x-internal-secret"
+    BACKEND_CALLBACK_TIMEOUT_SECONDS: float = 10.0
+    BACKEND_CALLBACK_MAX_RETRIES: int = 3
+
+    # ------------------------------------------------------------------
+    # CORS — production deployments MUST override this.
+    # ------------------------------------------------------------------
+    CORS_ALLOW_ORIGINS: str = "*"
+
+    # ------------------------------------------------------------------
+    # Cost / rate guardrails
+    # ------------------------------------------------------------------
+    # Per-tenant calls/min before we return 429.
+    RATE_LIMIT_PER_MINUTE: int = 100
+    # Hard cap on USD per single document extraction; abort & flag if exceeded.
+    MAX_COST_PER_DOCUMENT_USD: float = 1.0
+    # Daily circuit breaker — process-wide (or redis-shared) ceiling on
+    # cumulative OpenAI spend; 0 disables.
+    OPENAI_MAX_DAILY_USD: float = 0.0
 
     # ------------------------------------------------------------------
     # Object storage (S3 / MinIO)

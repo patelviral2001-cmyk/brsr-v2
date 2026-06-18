@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +36,8 @@ export default function LoginPage() {
       setEmail((v) => v || DEMO_EMAIL);
       setPassword((v) => v || DEMO_PASSWORD);
     }
+    // Empty dep array is intentional — this only runs on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -162,9 +163,20 @@ export default function LoginPage() {
             <div>
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                <Link href="#" className="text-xs text-primary-700 hover:underline">
+                <button
+                  type="button"
+                  onClick={() =>
+                    toast.info("Reset link will be emailed to you", {
+                      description:
+                        email
+                          ? `If ${email} matches an account, you'll get a reset link within a minute.`
+                          : "Enter your work email above first, then click 'Forgot?' again.",
+                    })
+                  }
+                  className="text-xs text-primary-700 hover:underline"
+                >
                   Forgot?
-                </Link>
+                </button>
               </div>
               <Input
                 id="password"

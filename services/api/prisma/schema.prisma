@@ -136,6 +136,7 @@ enum MetricStatus {
   SUBMITTED
   REVIEWED
   APPROVED
+  REJECTED
   LOCKED
 }
 
@@ -175,8 +176,12 @@ enum DocType {
 
 enum DocStatus {
   PENDING
+  UPLOADED
   CLASSIFIED
   EXTRACTED
+  EXTRACTION_FAILED
+  PARTIAL
+  NEEDS_REVIEW
   REVIEW_NEEDED
   APPROVED
   REJECTED
@@ -185,6 +190,7 @@ enum DocStatus {
 enum ExtractionStatus {
   DRAFT
   NEEDS_REVIEW
+  AUTO_ACCEPTED
   APPROVED
   REJECTED
   OVERRIDDEN
@@ -252,6 +258,7 @@ enum AuditActionType {
 
 enum SupplierStatus {
   INVITED
+  ACTIVE
   ENGAGED
   RESPONDED
   ARCHIVED
@@ -273,6 +280,8 @@ enum ReportFormat {
 
 enum ReportStatus {
   DRAFT
+  GENERATING
+  GENERATED
   IN_REVIEW
   APPROVED
   PUBLISHED
@@ -299,6 +308,7 @@ enum AuditExceptionSeverity {
 
 enum AuditExceptionStatus {
   OPEN
+  IN_REVIEW
   RESPONDED
   CLOSED
 }
@@ -482,11 +492,13 @@ model RoleAssignment {
 
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  scopeNode EntityNode? @relation("RoleScopeNode", fields: [scopeNodeId], references: [id])
+  scopeNode EntityNode? @relation("RoleScopeNode", fields: [scopeNodeId], references: [id], onDelete: SetNull)
 
+  @@unique([userId, roleId, scopeNodeId])
   @@index([userId])
   @@index([roleId])
   @@index([scopeNodeId])
+  @@index([expiresAt])
   @@map("role_assignment")
 }
 
@@ -500,10 +512,12 @@ model ApiKey {
   createdAt  DateTime  @default(now()) @map("created_at")
   lastUsedAt DateTime? @map("last_used_at")
   expiresAt  DateTime? @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([expiresAt])
   @@map("api_key")
 }
 
@@ -525,6 +539,9 @@ model AuditLog {
 
   @@index([tenantId, createdAt(sort: Desc)])
   @@index([tenantId, entityType, entityId])
+  @@index([tenantId, actorUserId, createdAt(sort: Desc)])
+  @@index([tenantId, action, createdAt(sort: Desc)])
+  @@index([requestId])
   @@map("audit_log")
 }
 
@@ -565,7 +582,7 @@ model EntityNode {
   updatedAt           DateTime            @updatedAt @map("updated_at")
 
   tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  parent         EntityNode?      @relation("EntityHierarchy", fields: [parentId], references: [id])
+  parent         EntityNode?      @relation("EntityHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
   children       EntityNode[]     @relation("EntityHierarchy")
   documents      Document[]
   roleAssignments RoleAssignment[] @relation("RoleScopeNode")
@@ -574,6 +591,8 @@ model EntityNode {
   @@unique([tenantId, code])
   @@index([tenantId, parentId])
   @@index([tenantId, type])
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, country])
   @@map("entity_node")
 }
 
@@ -626,7 +645,9 @@ model MaterialitySurvey {
   tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   responses SurveyResponse[]
 
+  @@unique([tenantId, fy, title])
   @@index([tenantId, fy])
+  @@index([tenantId, status])
   @@map("materiality_survey")
 }
 
@@ -640,9 +661,11 @@ model SurveyResponse {
   responses           Json
 
   survey           MaterialitySurvey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  stakeholderGroup StakeholderGroup? @relation(fields: [stakeholderGroupId], references: [id])
+  stakeholderGroup StakeholderGroup? @relation(fields: [stakeholderGroupId], references: [id], onDelete: SetNull)
 
+  @@unique([surveyId, respondentEmail])
   @@index([surveyId])
+  @@index([stakeholderGroupId])
   @@map("survey_response")
 }
 
@@ -660,7 +683,9 @@ model MaterialityAssessmentRun {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@unique([tenantId, fy])
   @@index([tenantId, fy])
+  @@index([tenantId, lockedAt])
   @@map("materiality_assessment_run")
 }
 
@@ -698,7 +723,9 @@ model IngestEvent {
   source DataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, status])
-  @@index([sourceId])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([sourceId, createdAt(sort: Desc)])
+  @@index([externalId])
   @@map("ingest_event")
 }
 
@@ -731,13 +758,15 @@ model Document {
   tags                  String[]
 
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  scopeNode        EntityNode        @relation(fields: [scopeNodeId], references: [id], onDelete: Cascade)
+  scopeNode        EntityNode        @relation(fields: [scopeNodeId], references: [id], onDelete: Restrict)
   extractionFields ExtractionField[]
 
   @@unique([tenantId, sha256])
   @@index([tenantId, scopeNodeId, status])
+  @@index([tenantId, status, uploadedAt(sort: Desc)])
   @@index([tenantId, uploadedAt(sort: Desc)])
   @@index([tenantId, docType])
+  @@index([scopeNodeId])
   @@map("document")
 }
 
@@ -774,7 +803,10 @@ model ExtractionField {
 
   @@index([tenantId, canonicalKey, periodStart])
   @@index([tenantId, status, confidenceComposite])
+  @@index([tenantId, status])
+  @@index([tenantId, reviewedAt(sort: Desc)])
   @@index([documentId])
+  @@index([documentId, canonicalKey])
   @@map("extraction_field")
 }
 
@@ -847,7 +879,9 @@ model EmissionFactor {
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([source, activityType, region, validFrom])
+  @@index([source, activityType, region, gas, validFrom(sort: Desc)])
   @@index([tenantId, validFrom])
+  @@index([validFrom, validTo])
   @@map("emission_factor")
 }
 
@@ -882,11 +916,20 @@ model MetricEvent {
   updatedAt           DateTime          @updatedAt @map("updated_at")
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  scopeNode EntityNode @relation(fields: [scopeNodeId], references: [id], onDelete: Cascade)
+  scopeNode EntityNode @relation(fields: [scopeNodeId], references: [id], onDelete: Restrict)
 
+  // NOTE: business-level dedup also requires `dimensions` JSON equality —
+  // enforced in code path + a raw expression-index in 02_constraints.sql.
   @@index([tenantId, canonicalKey, periodStart])
   @@index([tenantId, scopeNodeId, periodStart])
+  @@index([tenantId, scopeNodeId, canonicalKey, periodStart])
   @@index([tenantId, status])
+  @@index([tenantId, status, periodStart(sort: Desc)])
+  @@index([tenantId, canonicalKey, periodEnd(sort: Desc)])
+  @@index([tenantId, periodStart, periodEnd])
+  @@index([assuranceSnapshotId])
+  @@index([sourceExtractionId])
+  @@index([sourceCalcRunId])
   @@map("metric_event")
 }
 
@@ -911,6 +954,8 @@ model CalcRun {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, outputCanonicalKey, periodStart])
+  @@index([tenantId, computedAt(sort: Desc)])
+  @@index([formulaVersionId])
   @@map("calc_run")
 }
 
@@ -946,12 +991,14 @@ model WorkflowInstance {
   completedAt  DateTime?      @map("completed_at")
   slaDeadline  DateTime       @map("sla_deadline")
 
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  workflow ApprovalWorkflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Restrict)
   actions  ApprovalAction[]
 
   @@index([tenantId, status])
   @@index([tenantId, entityType, entityId])
+  @@index([tenantId, status, slaDeadline])
+  @@index([workflowId])
   @@map("workflow_instance")
 }
 
@@ -968,6 +1015,8 @@ model ApprovalAction {
   workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
 
   @@index([workflowInstanceId])
+  @@index([workflowInstanceId, step])
+  @@index([performedBy, performedAt(sort: Desc)])
   @@map("approval_action")
 }
 
@@ -996,7 +1045,10 @@ model AssuranceSnapshot {
   tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   exceptions AuditException[]
 
+  @@unique([tenantId, fy, framework, snapshotAt])
   @@index([tenantId, fy, framework])
+  @@index([tenantId, status, snapshotAt(sort: Desc)])
+  @@index([parentSnapshotId])
   @@map("assurance_snapshot")
 }
 
@@ -1015,6 +1067,9 @@ model AuditException {
   snapshot AssuranceSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
   @@index([snapshotId])
+  @@index([snapshotId, status])
+  @@index([snapshotId, severity])
+  @@index([metricEventId])
   @@map("audit_exception")
 }
 
@@ -1045,7 +1100,10 @@ model Report {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@unique([tenantId, fy, framework, version])
   @@index([tenantId, fy, framework, version(sort: Desc)])
+  @@index([tenantId, status, generatedAt(sort: Desc)])
+  @@index([parentReportId])
   @@map("report")
 }
 
@@ -1072,7 +1130,10 @@ model Supplier {
   responses SupplierResponse[]
   scores    SupplierScore[]
 
+  @@unique([tenantId, primaryContactEmail])
   @@index([tenantId, status])
+  @@index([tenantId, country])
+  @@index([tenantId, sector])
   @@map("supplier")
 }
 
@@ -1105,9 +1166,12 @@ model SupplierInvite {
   expiresAt       DateTime @map("expires_at")
 
   supplier      Supplier              @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  questionnaire SupplierQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  questionnaire SupplierQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Restrict)
 
   @@index([supplierId])
+  @@index([supplierId, expiresAt])
+  @@index([questionnaireId])
+  @@index([expiresAt])
   @@map("supplier_invite")
 }
 
@@ -1122,9 +1186,12 @@ model SupplierResponse {
   score           Float?
 
   supplier      Supplier              @relation(fields: [supplierId], references: [id], onDelete: Cascade)
-  questionnaire SupplierQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  questionnaire SupplierQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Restrict)
 
   @@index([supplierId])
+  @@index([supplierId, submittedAt(sort: Desc)])
+  @@index([questionnaireId])
+  @@index([status])
   @@map("supplier_response")
 }
 
@@ -1164,6 +1231,8 @@ model SbtiTarget {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, scope, targetYear])
   @@map("sbti_target")
 }
 
@@ -1185,6 +1254,8 @@ model AbatementProject {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, startDate, endDate])
   @@map("abatement_project")
 }
 
@@ -1204,6 +1275,8 @@ model CarbonCredit {
 
   @@unique([registry, serialNumber])
   @@index([tenantId])
+  @@index([tenantId, vintage(sort: Desc)])
+  @@index([tenantId, retiredOn])
   @@map("carbon_credit")
 }
 
@@ -1219,10 +1292,11 @@ model CopilotConversation {
   createdAt     DateTime @default(now()) @map("created_at")
   lastMessageAt DateTime @default(now()) @map("last_message_at")
 
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   messages CopilotMessage[]
 
   @@index([tenantId, userId, lastMessageAt(sort: Desc)])
+  @@index([tenantId, lastMessageAt(sort: Desc)])
   @@map("copilot_conversation")
 }
 
@@ -1242,5 +1316,6 @@ model CopilotMessage {
   conversation CopilotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+  @@index([conversationId, role, createdAt])
   @@map("copilot_message")
 }

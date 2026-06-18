@@ -51,8 +51,8 @@ export class HierarchyService {
   async create(tenantId: string, dto: CreateHierarchyNodeDto, actorId: string) {
     let parent: { id: string; type: HierarchyNodeType; ltreePath: string; tenantId: string } | null = null;
     if (dto.parentId) {
-      parent = await (this.prisma as any).hierarchyNode.findFirst({
-        where: { id: dto.parentId, tenantId, deletedAt: null },
+      parent = await (this.prisma as any).entityNode.findFirst({
+        where: { id: dto.parentId, tenantId },
       });
       if (!parent) throw new NotFoundException('Parent node not found');
     }
@@ -60,12 +60,12 @@ export class HierarchyService {
 
     const ltreePath = parent ? `${parent.ltreePath}.${dto.code}` : dto.code;
 
-    const existing = await (this.prisma as any).hierarchyNode.findFirst({
+    const existing = await (this.prisma as any).entityNode.findFirst({
       where: { tenantId, ltreePath },
     });
     if (existing) throw new ConflictException(`Node with path ${ltreePath} already exists`);
 
-    const node = await (this.prisma as any).hierarchyNode.create({
+    const node = await (this.prisma as any).entityNode.create({
       data: {
         tenantId,
         parentId: parent?.id ?? null,
@@ -100,26 +100,26 @@ export class HierarchyService {
   ) {
     let pathFilter: { startsWith: string } | undefined;
     if (args.scopeNodeId) {
-      const scope = await (this.prisma as any).hierarchyNode.findFirst({
+      const scope = await (this.prisma as any).entityNode.findFirst({
         where: { id: args.scopeNodeId, tenantId },
       });
       if (scope) pathFilter = { startsWith: scope.ltreePath };
     }
-    return (this.prisma as any).hierarchyNode.findMany({
+    return (this.prisma as any).entityNode.findMany({
       where: {
         tenantId,
         type: args.type,
         parentId: args.parentId,
         ltreePath: pathFilter,
-        deletedAt: null,
+        
       },
       orderBy: { ltreePath: 'asc' },
     });
   }
 
   async findOne(tenantId: string, id: string) {
-    const node = await (this.prisma as any).hierarchyNode.findFirst({
-      where: { id, tenantId, deletedAt: null },
+    const node = await (this.prisma as any).entityNode.findFirst({
+      where: { id, tenantId },
       include: { children: true, parent: true },
     });
     if (!node) throw new NotFoundException('Node not found');
@@ -128,7 +128,7 @@ export class HierarchyService {
 
   async update(tenantId: string, id: string, dto: UpdateHierarchyNodeDto, actorId: string) {
     const before = await this.findOne(tenantId, id);
-    const updated = await (this.prisma as any).hierarchyNode.update({
+    const updated = await (this.prisma as any).entityNode.update({
       where: { id },
       data: {
         name: dto.name,
@@ -161,8 +161,8 @@ export class HierarchyService {
     const node = await this.findOne(tenantId, id);
     let newParent: { id: string; type: HierarchyNodeType; ltreePath: string } | null = null;
     if (dto.newParentId) {
-      newParent = await (this.prisma as any).hierarchyNode.findFirst({
-        where: { id: dto.newParentId, tenantId, deletedAt: null },
+      newParent = await (this.prisma as any).entityNode.findFirst({
+        where: { id: dto.newParentId, tenantId },
       });
       if (!newParent) throw new NotFoundException('New parent not found');
       if (newParent.ltreePath.startsWith(node.ltreePath)) {
@@ -175,19 +175,19 @@ export class HierarchyService {
     const newPath = newParent ? `${newParent.ltreePath}.${node.code}` : node.code;
     if (oldPath === newPath) return node;
 
-    const descendants: { id: string; ltreePath: string }[] = await (this.prisma as any).hierarchyNode.findMany({
+    const descendants: { id: string; ltreePath: string }[] = await (this.prisma as any).entityNode.findMany({
       where: { tenantId, ltreePath: { startsWith: `${oldPath}.` } },
       select: { id: true, ltreePath: true },
     });
 
     await this.prisma.$transaction(async (tx) => {
-      await (tx as any).hierarchyNode.update({
+      await (tx as any).entityNode.update({
         where: { id: node.id },
         data: { parentId: newParent?.id ?? null, ltreePath: newPath },
       });
       for (const d of descendants) {
         const suffix = d.ltreePath.slice(oldPath.length); // e.g. ".bu_a.fac_1"
-        await (tx as any).hierarchyNode.update({
+        await (tx as any).entityNode.update({
           where: { id: d.id },
           data: { ltreePath: newPath + suffix },
         });
@@ -208,7 +208,7 @@ export class HierarchyService {
 
   async softDelete(tenantId: string, id: string, actorId: string) {
     const node = await this.findOne(tenantId, id);
-    await (this.prisma as any).hierarchyNode.update({
+    await (this.prisma as any).entityNode.update({
       where: { id },
       data: { deletedAt: new Date(), effectiveTo: new Date() },
     });
@@ -225,8 +225,8 @@ export class HierarchyService {
   // ------------------- Tree -------------------
 
   async tree(tenantId: string) {
-    const all = await (this.prisma as any).hierarchyNode.findMany({
-      where: { tenantId, deletedAt: null },
+    const all = await (this.prisma as any).entityNode.findMany({
+      where: { tenantId },
       orderBy: { ltreePath: 'asc' },
     });
     const byId = new Map<string, any>();
@@ -270,8 +270,8 @@ export class HierarchyService {
     const inserted = await this.prisma.$transaction(async (tx) => {
       const byCode = new Map<string, { id: string; ltreePath: string; type: HierarchyNodeType }>();
       // pre-load existing nodes so partial imports can attach
-      const existing = await (tx as any).hierarchyNode.findMany({
-        where: { tenantId, deletedAt: null },
+      const existing = await (tx as any).entityNode.findMany({
+        where: { tenantId },
         select: { code: true, id: true, ltreePath: true, type: true },
       });
       for (const n of existing) byCode.set(n.code, n);
@@ -291,7 +291,7 @@ export class HierarchyService {
             this.validateParentChild(parent.type, row.type);
           }
           const ltreePath = parent ? `${parent.ltreePath}.${row.code}` : row.code;
-          const node = await (tx as any).hierarchyNode.create({
+          const node = await (tx as any).entityNode.create({
             data: {
               tenantId,
               parentId: parent?.id ?? null,

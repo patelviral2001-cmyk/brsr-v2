@@ -11,10 +11,11 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { IamService } from './iam.service';
-import { ExchangeCodeDto } from './dto/auth.dto';
+import { ExchangeCodeDto, LoginDto, LogoutDto, RefreshDto } from './dto/auth.dto';
 import { InviteUserDto, UpdateUserDto } from './dto/users.dto';
 import { AssignRoleDto, CreateRoleDto } from './dto/roles.dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -40,18 +41,38 @@ export class IamController {
     return this.iam.exchangeCode(dto, req.ip, req.headers['user-agent']);
   }
 
+  // Brute-force protection: limit credential logins to 5 per IP per 5 minutes.
+  // This sits ON TOP of the per-user account-lockout enforced in iam.service.
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 5 * 60_000 } })
   @Post('auth/login')
   @ApiOperation({ summary: 'Credentials login — returns JWT for the matched user' })
-  login(@Body() body: { email: string; password: string }, @Req() req: Request) {
+  login(@Body() body: LoginDto, @Req() req: Request) {
     return this.iam.loginWithCredentials(body.email, body.password, req.ip, req.headers['user-agent']);
   }
 
+  // Refresh-token rotation. Stricter than general API throttle: 30/min/IP.
   @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('auth/refresh')
-  @ApiOperation({ summary: 'Refresh access token' })
-  refresh(@Body() body: { refreshToken: string }) {
+  @ApiOperation({ summary: 'Refresh access token (rotates refresh token)' })
+  refresh(@Body() body: RefreshDto) {
     return this.iam.refreshToken(body.refreshToken);
+  }
+
+  @Public()
+  @Post('auth/logout')
+  @ApiOperation({ summary: 'Invalidate the current refresh-token family' })
+  logout(@Body() body: LogoutDto) {
+    return this.iam.logout(body.refreshToken);
+  }
+
+  // MFA stub — endpoint exists so the schema's `mfaEnrolled` field has a
+  // visible API surface. Real TOTP flow is a roadmap item; see SECURITY.md.
+  @Post('mfa/enroll')
+  @ApiOperation({ summary: 'Begin MFA enrollment (stub — not yet implemented)' })
+  enrollMfa(@CurrentUser() user: AuthenticatedUser) {
+    return this.iam.enrollMfaStub(user.id);
   }
 
   @Get('me')

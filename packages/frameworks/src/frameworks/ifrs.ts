@@ -239,7 +239,17 @@ export const IFRS_S2_DISCLOSURES: IfrsDisclosure[] = [
       "Industry-based metrics associated with particular business models, activities or other common features that characterise participation in the industry.",
     response_type: "TABLE",
     is_mandatory: true,
-    mapped_canonical_keys: ["ghg_intensity_per_unit_output"],
+    // S2.29(d) requires SASB-derived, industry-specific metrics. The
+    // canonical layer cannot enumerate all of them generically — the
+    // sector resolver (see SASB_DISCLOSURES) supplies the actual list
+    // at runtime. We surface the most universal intensity metrics here
+    // and rely on getSasbBySector() at report time.
+    mapped_canonical_keys: [
+      "ghg_intensity_per_unit_output",
+      "ghg_intensity_per_revenue",
+      "energy_intensity_per_revenue",
+      "water_intensity_per_revenue",
+    ],
     narrative_template: null,
   }),
   i({
