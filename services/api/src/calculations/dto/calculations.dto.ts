@@ -71,11 +71,14 @@ export class ScopeWindowDto {
   @IsDateString()
   periodEnd!: string;
 
-  @ApiProperty({ type: [String], description: 'Hierarchy node ids to include' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Hierarchy node ids to include. Omit to default to all root entities for the tenant.',
+  })
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @IsString({ each: true })
-  scopeNodeIds!: string[];
+  scopeNodeIds?: string[];
 
   @ApiPropertyOptional({ enum: CalcEngineFramework, isArray: true })
   @IsOptional()

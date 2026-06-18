@@ -95,6 +95,13 @@ export class QueryMetricsDto {
   @IsString()
   canonicalKey?: string;
 
+  @ApiPropertyOptional({
+    description: 'Convenience period filter ("2025-04" = April 2025, "FY24-25" = financial year). Expanded to from/to in the service.',
+  })
+  @IsOptional()
+  @IsString()
+  period?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()

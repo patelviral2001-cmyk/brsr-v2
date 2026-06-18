@@ -83,12 +83,27 @@ export class CalculationsService {
     if (new Date(dto.periodStart) > new Date(dto.periodEnd)) {
       throw new BadRequestException('periodStart must be <= periodEnd');
     }
-    // Validate scope nodes belong to this tenant.
-    const ownedCount = await (this.prisma as any).entityNode.count({
-      where: { id: { in: dto.scopeNodeIds }, tenantId },
-    });
-    if (ownedCount !== dto.scopeNodeIds.length) {
-      throw new BadRequestException('One or more scopeNodeIds do not belong to this tenant');
+    // Default to all root/group entities for the tenant if no scope was given.
+    if (!dto.scopeNodeIds || dto.scopeNodeIds.length === 0) {
+      const roots = await (this.prisma as any).entityNode.findMany({
+        where: { tenantId },
+        select: { id: true },
+        take: 50,
+      });
+      if (roots.length === 0) {
+        throw new BadRequestException(
+          'No entity hierarchy exists. Create at least one entity before running calculations.',
+        );
+      }
+      dto.scopeNodeIds = roots.map((r: any) => r.id);
+    } else {
+      // Validate the supplied scope nodes belong to this tenant.
+      const ownedCount = await (this.prisma as any).entityNode.count({
+        where: { id: { in: dto.scopeNodeIds }, tenantId },
+      });
+      if (ownedCount !== dto.scopeNodeIds.length) {
+        throw new BadRequestException('One or more scopeNodeIds do not belong to this tenant');
+      }
     }
 
     // Schema CalcRun fields: formulaVersionId, outputCanonicalKey, outputValue,

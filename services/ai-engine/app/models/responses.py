@@ -69,6 +69,10 @@ class ExtractedField(BaseModel):
     model_used: Optional[str] = None
     prompt_version: Optional[str] = None
     issues: list[str] = Field(default_factory=list)
+    validation_issues: list["ValidationIssue"] = Field(
+        default_factory=list,
+        description="Issues raised by the declarative rules engine — drives HITL review.",
+    )
 
     @field_validator("confidence_composite")
     @classmethod
@@ -118,3 +122,8 @@ class ValidateResponse(BaseModel):
     revised_fields: list[ExtractedField] = Field(default_factory=list)
     model_calls: int = 0
     latency_ms: int = 0
+
+
+# ExtractedField references ValidationIssue via forward reference — rebuild now
+# that the symbol is defined.
+ExtractedField.model_rebuild()

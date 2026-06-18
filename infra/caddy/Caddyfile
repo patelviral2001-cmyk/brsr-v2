@@ -46,9 +46,9 @@
 		-Server
 	}
 
-	# ---- API + GraphQL ---------------------------------------------
+	# ---- API + GraphQL + public health ---------------------------------
 	@api {
-		path /api/v1/* /api/v1 /graphql /graphql/*
+		path /api/v1/* /api/v1 /graphql /graphql/* /v1/health /v1/health/* /metrics-prom
 	}
 	handle @api {
 		reverse_proxy api:4000 {

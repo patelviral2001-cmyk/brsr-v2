@@ -60,6 +60,16 @@ export class MappingFilterDto {
   @IsOptional()
   @IsString()
   version?: string;
+
+  @ApiPropertyOptional({ description: 'Filter mappings that include this canonical metric key.' })
+  @IsOptional()
+  @IsString()
+  metricKey?: string;
+
+  @ApiPropertyOptional({ description: 'Filter to a specific BRSR section prefix (e.g. "P6").' })
+  @IsOptional()
+  @IsString()
+  section?: string;
 }
 
 export class ResolvedSectionDto {
