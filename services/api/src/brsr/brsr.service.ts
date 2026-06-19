@@ -335,6 +335,37 @@ export class BrsrService {
     if (owned !== dto.scopeNodeIds.length) {
       throw new BadRequestException('One or more scopeNodeIds do not belong to this tenant');
     }
+    // Journey trace failure #4: previously generate() would happily create
+    // a Report row and queue worker jobs even for tenants with zero
+    // approved metric_events in the requested FY. The worker's resolve()
+    // call now 400s, the BullMQ job fails, but the Report row stays
+    // around with pdfS3=null. Worse, it's still in `approvable_from` set
+    // so a user can mark the empty shell as APPROVED. Mirror the resolve
+    // check at generate-time so the failure surfaces at the API instead
+    // of queue-time.
+    const { periodStart, periodEnd } = parseFy(dto.fy);
+    const eventCount = await (this.prisma as any).metricEvent.count({
+      where: {
+        tenantId,
+        scopeNodeId: { in: dto.scopeNodeIds },
+        periodStart: { gte: periodStart },
+        periodEnd: { lte: periodEnd },
+        status: { in: ['APPROVED', 'LOCKED'] },
+      },
+    });
+    if (eventCount === 0) {
+      const newest = await (this.prisma as any).metricEvent.findFirst({
+        where: { tenantId, status: { in: ['APPROVED', 'LOCKED'] } },
+        orderBy: { periodEnd: 'desc' },
+        select: { periodStart: true, periodEnd: true },
+      });
+      const hint = newest
+        ? ` Most recent approved data covers ${newest.periodStart.toISOString().slice(0, 10)} → ${newest.periodEnd.toISOString().slice(0, 10)}.`
+        : ' No approved metric_events exist for this tenant yet.';
+      throw new BadRequestException(
+        `Cannot generate ${dto.framework} report for ${dto.fy}: no approved metric_events in the requested period+scope.${hint}`,
+      );
+    }
     // Schema Report fields: fy, framework, title, status, reportData (json),
     // narrativeOverrides, generatedBy. No 'GENERATING'/'createdBy'/'formats'
     // top-level columns — stash those in reportData / status flow.

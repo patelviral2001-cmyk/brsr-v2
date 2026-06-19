@@ -145,6 +145,16 @@ export class ReportsService {
         `Report in status ${r.status} cannot be approved. Must be one of ${[...approvableFrom].join(',')}.`,
       );
     }
+    // Journey trace failure #4 (cont'd): refuse to approve a shell with no
+    // actual output. If both pdfS3 and xlsxS3 are still null the worker
+    // hasn't produced anything (e.g. BadRequestException from resolve()).
+    // Approving an empty Report is a compliance disaster — looks signed-off
+    // in the UI but there's no file to file with the regulator.
+    if (!r.pdfS3 && !r.xlsxS3) {
+      throw new ConflictException(
+        'Report has no generated output (both pdfS3 and xlsxS3 are null). Wait for the worker to finish or re-generate.',
+      );
+    }
     // Segregation of duties: creator can't approve their own report — UNLESS
     // the tenant has no other user with `report.approve`. Forensic Flow #3:
     // a single-admin tenant was permanently stuck at IN_REVIEW.
