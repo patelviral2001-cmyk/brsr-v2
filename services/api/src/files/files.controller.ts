@@ -6,10 +6,12 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -93,6 +95,21 @@ export class FilesController {
     @Query('ttl') ttl?: string,
   ) {
     return this.svc.signedUrl(user.tenantId, id, ttl ? Number(ttl) : undefined).then((url) => ({ url }));
+  }
+
+  /**
+   * Auth-checked file download. Streams the object from object storage through
+   * the API so the customer's browser never sees the internal MinIO endpoint
+   * (which is unreachable from outside the docker network) and so we get a
+   * single, audited code path for "download original document".
+   */
+  @Get(':id/download')
+  async download(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseCuidPipe) id: string,
+    @Res() res: Response,
+  ) {
+    return this.svc.streamDownload(user.tenantId, id, res);
   }
 
   @Delete(':id')

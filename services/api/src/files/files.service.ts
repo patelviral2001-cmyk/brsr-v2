@@ -364,6 +364,32 @@ export class FilesService {
   }
 
   /**
+   * Auth-checked file download — streams the object bytes from MinIO/S3
+   * through this Node process. Necessary because the deployed S3_ENDPOINT
+   * is `http://minio:9000` (internal docker network) — a presigned URL
+   * signed with that host header is unreachable from the customer's
+   * browser. The streaming proxy keeps the storage backend private while
+   * still giving the browser an attachment download.
+   */
+  async streamDownload(
+    tenantId: string,
+    id: string,
+    res: any, // Express.Response; typed `any` to avoid pulling Express types here
+  ): Promise<void> {
+    const doc = await this.findOne(tenantId, id);
+    const buf = await this.s3.get(doc.s3Bucket, doc.s3Key);
+    const filename = sanitizeFilename(doc.originalName ?? 'document');
+    res.setHeader('Content-Type', doc.mimeType ?? 'application/octet-stream');
+    res.setHeader('Content-Length', String(buf.length));
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`,
+    );
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.end(buf);
+  }
+
+  /**
    * Internal callback from the AI engine. Persists extraction fields, updates
    * document status, and enqueues a post-extraction validation job.
    *

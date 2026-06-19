@@ -42,6 +42,7 @@ export const ENDPOINTS = {
   fileReprocess: (id: string) => `/files/${id}/reprocess`,
   fileExtraction: (id: string) => `/files/${id}/extractions`,
   fileSignedUrl: (id: string) => `/files/${id}/signed-url`,
+  fileDownload: (id: string) => `/files/${id}/download`,
 
   // ---- Extraction ----
   extractionQueue: "/extraction/queue",

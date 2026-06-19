@@ -44,17 +44,25 @@ export default function FileDetailPage() {
 
   const handleDownloadOriginal = async () => {
     if (!id) return;
-    // The /files/:id payload doesn't pre-include signedUrl; fetch it on demand.
+    // Stream through the API rather than redirecting to a presigned URL —
+    // the backing object store runs on a docker-internal hostname that the
+    // customer's browser cannot resolve. apiClient already carries the
+    // user's JWT via its request interceptor.
     try {
-      const res = await apiGet<{ url?: string; signedUrl?: string }>(ENDPOINTS.fileSignedUrl(id));
-      const url = res?.url ?? res?.signedUrl;
-      if (!url) {
-        toast.error("Download unavailable", { description: "Server did not return a download URL." });
-        return;
-      }
-      window.open(url, "_blank", "noopener,noreferrer");
+      const { apiClient } = await import("@/lib/api/client");
+      const res = await apiClient.get(ENDPOINTS.fileDownload(id), {
+        responseType: "blob",
+      });
+      const ct = String(res.headers["content-type"] ?? "application/octet-stream");
+      const blob = new Blob([res.data], { type: ct });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
     } catch (e) {
-      toast.error("Couldn't get download link", {
+      toast.error("Couldn't download original", {
         description: e instanceof Error ? e.message : "Please try again.",
       });
     }
