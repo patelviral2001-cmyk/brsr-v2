@@ -1,15 +1,9 @@
 /**
  * Production-grade axios client for the NestJS backend.
- *
- * Behavior matrix:
- *   - DEMO_MODE=true  → all requests short-circuit to the in-memory
- *                       mock-fallback (no network).
- *   - DEMO_MODE=false → real HTTP. On 401 we try a single token refresh,
- *                       then fail through to logout + /login redirect.
- *                       5xx responses are retried up to 2 times with
- *                       exponential backoff. Errors are normalized to the
- *                       backend envelope `{error, message, statusCode,
- *                       traceId}` so callers can show meaningful copy.
+ * On 401 we try a single token refresh, then fail through to logout +
+ * /login redirect. 5xx responses are retried up to 2 times with exponential
+ * backoff. Errors are normalized to the backend envelope
+ * `{error, message, statusCode, traceId}` so callers can show meaningful copy.
  */
 import axios, {
   AxiosError,
@@ -18,8 +12,7 @@ import axios, {
   AxiosResponse,
   InternalAxiosRequestConfig,
 } from "axios";
-import { API_BASE_URL, DEMO_MODE } from "../constants";
-import { resolveMock } from "./mock-fallback";
+import { API_BASE_URL } from "../constants";
 import { ENDPOINTS } from "./endpoints";
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -249,14 +242,6 @@ export async function apiFetch<T = unknown>(
   path: string,
   config: AxiosRequestConfig = {},
 ): Promise<T> {
-  if (DEMO_MODE) {
-    const mock = await resolveMock<T>(path, config);
-    if (mock !== undefined) return mock;
-    // Return a typed empty payload rather than throwing in demo mode —
-    // pages render their empty-state UI.
-    return undefined as unknown as T;
-  }
-
   const res = await apiClient.request<T>({ url: path, ...config });
   return res.data;
 }
@@ -313,21 +298,6 @@ export async function apiUpload<T>(
   fields: Record<string, string | undefined> = {},
   onProgress?: (pct: number) => void,
 ): Promise<T> {
-  if (DEMO_MODE) {
-    for (let p = 0; p <= 100; p += 20) {
-      await sleep(120);
-      onProgress?.(p);
-    }
-    return {
-      id: `file_${Date.now()}`,
-      filename: file.name,
-      sizeBytes: file.size,
-      status: "PROCESSING",
-      uploadedAt: new Date().toISOString(),
-      mimeType: file.type,
-    } as unknown as T;
-  }
-
   const form = new FormData();
   form.append("file", file);
   for (const [k, v] of Object.entries(fields)) {
