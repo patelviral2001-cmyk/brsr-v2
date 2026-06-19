@@ -72,16 +72,71 @@ class DiscomExtraction:
 # ---------------------------------------------------------------------------
 
 _DISCOM_SIGS: list[tuple[str, re.Pattern[str]]] = [
+    # Gujarat
     ("ADANI",       re.compile(r"\bADANI\s+ELECTRICITY\b", re.I)),
     ("MGVCL",       re.compile(r"\b(MGVCL|MADHYA\s+GUJARAT\s+VIJ)\b", re.I)),
     ("PGVCL",       re.compile(r"\b(PGVCL|PASCHIM\s+GUJARAT\s+VIJ)\b", re.I)),
     ("UGVCL",       re.compile(r"\b(UGVCL|UTTAR\s+GUJARAT\s+VIJ)\b", re.I)),
     ("DGVCL",       re.compile(r"\b(DGVCL|DAKSHIN\s+GUJARAT\s+VIJ)\b", re.I)),
     ("TORRENT",     re.compile(r"\bTORRENT\s+POWER\b", re.I)),
+    # Maharashtra
+    ("MSEDCL",      re.compile(
+        r"(\bMSEDCL\b|\bMahavitaran\b|महावितरण|महाराष्ट्र\s+स्टेट\s+इलेक्ट्रिसिटी)",
+        re.I | re.UNICODE,
+    )),
     ("TATA_POWER",  re.compile(r"\bTATA\s+POWER\b", re.I)),
-    ("CESC",        re.compile(r"\bCESC(\s+LIMITED)?\b", re.I)),
     ("BEST",        re.compile(r"\bBEST\s+(?:UNDERTAKING|MUMBAI)\b", re.I)),
-    ("GENERIC",     re.compile(r"\b(ELECTRICITY\s+BILL|TARIFF\s+CALCULATION|UTILITY\s+BILL)\b", re.I)),
+    ("RELIANCE",    re.compile(r"\b(RELIANCE\s+ENERGY|RELIANCE\s+INFRASTRUCTURE)\b", re.I)),
+    # Delhi
+    ("BSES_RAJ",    re.compile(r"\bBSES\s+RAJDHANI\b", re.I)),
+    ("BSES_YAM",    re.compile(r"\bBSES\s+YAMUNA\b", re.I)),
+    ("TPDDL",       re.compile(r"\b(TPDDL|TATA\s+POWER\s+DELHI)\b", re.I)),
+    # Karnataka
+    ("BESCOM",      re.compile(r"\bBESCOM\b|\bBANGALORE\s+ELECTRICITY\b", re.I)),
+    ("MESCOM",      re.compile(r"\bMESCOM\b|\bMANGALORE\s+ELECTRICITY\b", re.I)),
+    ("HESCOM",      re.compile(r"\bHESCOM\b|\bHUBLI\s+ELECTRICITY\b", re.I)),
+    ("GESCOM",      re.compile(r"\bGESCOM\b|\bGULBARGA\s+ELECTRICITY\b", re.I)),
+    # Tamil Nadu
+    ("TANGEDCO",    re.compile(r"\b(TANGEDCO|TNEB|TAMIL\s+NADU\s+ELECTRICITY)\b", re.I)),
+    # Andhra/Telangana
+    ("APSPDCL",     re.compile(r"\bAPSPDCL\b|\bAP\s+SOUTHERN\s+POWER\b", re.I)),
+    ("APEPDCL",     re.compile(r"\bAPEPDCL\b|\bAP\s+EASTERN\s+POWER\b", re.I)),
+    ("APCPDCL",     re.compile(r"\bAPCPDCL\b|\bAP\s+CENTRAL\s+POWER\b", re.I)),
+    ("TSSPDCL",     re.compile(r"\bTSSPDCL\b|\bTELANGANA\s+SOUTHERN\b", re.I)),
+    ("TSNPDCL",     re.compile(r"\bTSNPDCL\b|\bTELANGANA\s+NORTHERN\b", re.I)),
+    # Kerala
+    ("KSEB",        re.compile(r"\b(KSEB|KERALA\s+STATE\s+ELECTRICITY)\b", re.I)),
+    # West Bengal
+    ("WBSEDCL",     re.compile(r"\b(WBSEDCL|WEST\s+BENGAL\s+STATE\s+ELECTRICITY)\b", re.I)),
+    ("CESC",        re.compile(r"\bCESC(\s+LIMITED)?\b", re.I)),
+    # Punjab / Haryana
+    ("PSPCL",       re.compile(r"\b(PSPCL|PUNJAB\s+STATE\s+POWER)\b", re.I)),
+    ("UHBVN",       re.compile(r"\b(UHBVN|UTTAR\s+HARYANA\s+BIJLI)\b", re.I)),
+    ("DHBVN",       re.compile(r"\b(DHBVN|DAKSHIN\s+HARYANA\s+BIJLI)\b", re.I)),
+    # Rajasthan
+    ("JVVNL",       re.compile(r"\b(JVVNL|JAIPUR\s+VIDYUT)\b", re.I)),
+    ("AVVNL",       re.compile(r"\b(AVVNL|AJMER\s+VIDYUT)\b", re.I)),
+    ("JDVVNL",      re.compile(r"\b(JDVVNL|JODHPUR\s+VIDYUT)\b", re.I)),
+    # Uttar Pradesh
+    ("UPPCL",       re.compile(r"\b(UPPCL|UTTAR\s+PRADESH\s+POWER)\b", re.I)),
+    # Madhya Pradesh
+    ("MPPKVVCL",    re.compile(r"\b(MPPKVVCL|MADHYA\s+PRADESH\s+PASCHIM)\b", re.I)),
+    ("MPMKVVCL",    re.compile(r"\b(MPMKVVCL|MADHYA\s+PRADESH\s+MADHYA)\b", re.I)),
+    # Bihar / Jharkhand / Odisha / Chhattisgarh / Uttarakhand
+    ("SBPDCL",      re.compile(r"\b(SBPDCL|SOUTH\s+BIHAR\s+POWER)\b", re.I)),
+    ("NBPDCL",      re.compile(r"\b(NBPDCL|NORTH\s+BIHAR\s+POWER)\b", re.I)),
+    ("JBVNL",       re.compile(r"\b(JBVNL|JHARKHAND\s+BIJLI)\b", re.I)),
+    ("CSPDCL",      re.compile(r"\b(CSPDCL|CHHATTISGARH\s+STATE\s+POWER)\b", re.I)),
+    ("UPCL",        re.compile(r"\b(UPCL|UTTARAKHAND\s+POWER)\b", re.I)),
+    ("TPODL",       re.compile(r"\bTP[CNWS]ODL\b|\bTATA\s+POWER\s+ODISHA\b", re.I)),
+    # Generic fallback — recognises any document that looks like an
+    # electricity bill but doesn't match a known DISCOM. Bilingual.
+    ("GENERIC",     re.compile(
+        r"(\bELECTRICITY\s+BILL\b|\bTARIFF\s+CALCULATION\b|\bUTILITY\s+BILL\b"
+        r"|\bLT\s+E-?Bill\b|\bHT\s+E-?Bill\b|\bENERGY\s+CHARGES\b"
+        r"|वीज\s+पुरवठा|बिजली\s+बिल|विद्युत\s+देयक|வைய\s+ஆற்றல்)",
+        re.UNICODE | re.I,
+    )),
 ]
 
 
@@ -127,6 +182,12 @@ _KWH_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"Net\s+(?:Energy|Units)\s+Consumed\s*[:\-]\s*([\d,]+(?:\.\d+)?)\s*(?:kWh)?", re.I),
     re.compile(r"\bUnits\s*(?:billed|charged)\s*[:\-]\s*([\d,]+(?:\.\d+)?)", re.I),
     re.compile(r"^[\s\-]*Units?\s*[:\-]\s*([\d,]+(?:\.\d+)?)\s*kWh\s*$", re.I | re.M),
+    # Hindi: "कुल यूनिट"
+    re.compile(r"कुल\s+(?:यू|यु|यू)निट\s*[:\-]?\s*([\d,]+(?:\.\d+)?)", re.UNICODE),
+    # Tamil: "மொத்த அலகுகள்"
+    re.compile(r"மொத்த\s+அலகுகள்\s*[:\-]?\s*([\d,]+(?:\.\d+)?)", re.UNICODE),
+    # Marathi MSEDCL single-cell variant: "एकूण : 80"
+    re.compile(r"एकूण\s*[:\-]?\s*([\d,]+(?:\.\d+)?)\b(?!\s*\d)", re.UNICODE),
 ]
 
 _DEMAND_PATTERNS: list[re.Pattern[str]] = [
@@ -140,6 +201,10 @@ _LOAD_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"Sanctioned\s+Load\s*[:\-]\s*([\d,]+(?:\.\d+)?)\s*k?W?", re.I),
     re.compile(r"Connected\s+Load\s*[:\-]\s*([\d,]+(?:\.\d+)?)\s*k?W?", re.I),
     re.compile(r"Sanctioned\s+Demand\s*[:\-]\s*([\d,]+(?:\.\d+)?)", re.I),
+    # MSEDCL: "मंजूर भार: 0.96 KW" or just "मंजूर भार 0.96"
+    re.compile(r"मंजूर\s+भार\s*[:\-]?\s*([\d,]+(?:\.\d+)?)\s*(?:k?W|किलोवॅट)?", re.UNICODE | re.I),
+    # Hindi: "स्वीकृत भार"
+    re.compile(r"स्वीकृत\s+भार\s*[:\-]?\s*([\d,]+(?:\.\d+)?)\s*(?:k?W)?", re.UNICODE | re.I),
 ]
 
 _PF_PATTERNS: list[re.Pattern[str]] = [
@@ -151,6 +216,16 @@ _BILL_AMOUNT_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"Total\s+Payable\s*[:\-]\s*(?:Rs\.?|INR|₹)\s*([\d,]+(?:\.\d{1,2})?)", re.I),
     re.compile(r"Net\s+Amount\s+Payable\s*\(?\s*(?:Rs|INR|₹)?\s*\)?\s*[:\-]\s*([\d,]+(?:\.\d{1,2})?)", re.I),
     re.compile(r"Bill\s+Amount\s*\(?\s*(?:INR|Rs|₹)?\s*\)?\s*[:\-]\s*([\d,]+(?:\.\d{1,2})?)", re.I),
+    # MSEDCL: "Pay Rs. 3,380.00"
+    re.compile(r"Pay\s+Rs\.\s*([\d,]+(?:\.\d{1,2})?)", re.I),
+    # MSEDCL: "देयक रक्कम रु: 3,380.00"
+    re.compile(r"देयक\s+रक्कम\s*(?:रु\.?|₹)?\s*[:\-]?\s*([\d,]+(?:\.\d{1,2})?)", re.UNICODE),
+    # MSEDCL: "पूर्णांक देयक (रु.) ... 3,380.00"
+    re.compile(r"पूर्णांक\s+देयक\s*\(?\s*(?:रु\.?|₹)?\s*\)?\s*[:\-]?\s*([\d,]+(?:\.\d{1,2})?)", re.UNICODE),
+    # Hindi: "कुल देय राशि", "देय राशि"
+    re.compile(r"(?:कुल\s+)?देय\s+राशि\s*[:\-]?\s*(?:रु\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)", re.UNICODE),
+    # Hindi: "बिल राशि"
+    re.compile(r"बिल\s+राशि\s*[:\-]?\s*(?:रु\.?|₹)?\s*([\d,]+(?:\.\d{1,2})?)", re.UNICODE),
 ]
 
 # ---------------------------------------------------------------------------
@@ -179,11 +254,89 @@ _PERIOD_PATTERNS: list[re.Pattern[str]] = [
         r"Billing\s+Month\s*[:\-]\s*([A-Za-z]+)\s+(\d{4})",
         re.I,
     ),
+    # MSEDCL: "वीज पुरवठा देयक माहे: AUG-2025"
+    re.compile(
+        r"वीज\s+पुरवठा\s+देयक\s+माहे\s*[:\-]?\s*([A-Z]{3})-(\d{4})",
+        re.UNICODE | re.I,
+    ),
 ]
+
+_MONTH_ABBR = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
 
 
 def _month_idx(s: str) -> Optional[int]:
     return _MONTHS.get((s or "").strip().lower())
+
+
+_LAST_DAY_OF_MONTH = {
+    1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
+    7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31,
+}
+
+
+def _msedcl_units_from_table(text: str) -> Optional[float]:
+    """MSEDCL bills lay out the consumption as a 6-column row whose last
+    column is "एकूण" (Total).  PDF text extraction collapses this into a
+    sequence of digits often appearing on the line after the header block.
+    We hunt for the first line of 4-6 numeric tokens following the word
+    "एकूण" and return the LAST token as the total billed units."""
+    # Try a few layouts in order.
+    candidates = [
+        # Six values on one line: "<curr> <prev> <mult> <unit> <adj> <total>"
+        re.compile(
+            r"एकूण[\s\S]{0,400}?(?:^|\n)\s*(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+"
+            r"(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\b",
+            re.UNICODE | re.M,
+        ),
+        # Five values (no multiplier column shown).
+        re.compile(
+            r"एकूण[\s\S]{0,400}?(?:^|\n)\s*(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+"
+            r"(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\b",
+            re.UNICODE | re.M,
+        ),
+        # Four values.
+        re.compile(
+            r"एकूण[\s\S]{0,400}?(?:^|\n)\s*(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+"
+            r"(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\b",
+            re.UNICODE | re.M,
+        ),
+    ]
+    for pat in candidates:
+        m = pat.search(text)
+        if not m:
+            continue
+        last = _parse_number(m.groups()[-1])
+        # Discard implausible "0" (एकूण is the total; 0 means no consumption,
+        # rare for street-light bills but valid for closed connections —
+        # we accept it but lower confidence at the caller).
+        if last is not None and 0 <= last < 1e8:
+            return last
+    return None
+
+
+def _msedcl_period_from_month(text: str) -> tuple[Optional[date], Optional[date]]:
+    """Resolve `वीज पुरवठा देयक माहे: AUG-2025` → 2025-08-01..2025-08-31."""
+    m = re.search(
+        r"वीज\s+पुरवठा\s+देयक\s+माहे\s*[:\-]?\s*([A-Z]{3})-(\d{4})",
+        text,
+        re.UNICODE | re.I,
+    )
+    if not m:
+        return None, None
+    mon = _MONTH_ABBR.get(m.group(1).upper())
+    if not mon:
+        return None, None
+    try:
+        year = int(m.group(2))
+    except ValueError:
+        return None, None
+    last = _LAST_DAY_OF_MONTH[mon]
+    if mon == 2 and (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)):
+        last = 29
+    return date(year, mon, 1), date(year, mon, last)
 
 
 def _parse_period(text: str) -> tuple[Optional[date], Optional[date]]:
@@ -253,22 +406,42 @@ def extract(text: str) -> Optional[DiscomExtraction]:
     out = DiscomExtraction(discom=discom)
     matched = 0
 
-    # electricity_kwh — the headline number
-    m = _match_first(text, _KWH_PATTERNS)
-    if m:
-        val = _parse_number(m.group(1))
-        if val is not None and 0 < val < 1e9:
-            out.fields.append(DiscomField(
-                metric_key="purchased_electricity_kwh",
-                value=int(val) if val == int(val) else val,
-                unit="kWh",
-                raw_text=m.group(0)[:200],
-                confidence=0.95,
-            ))
-            matched += 1
+    # MSEDCL specialist: the kWh is in a tabular layout that doesn't match the
+    # generic "Label: value" patterns. Try its custom parser first.
+    val: Optional[float] = None
+    raw_text = ""
+    if discom == "MSEDCL":
+        v = _msedcl_units_from_table(text)
+        if v is not None:
+            val = v
+            raw_text = f"MSEDCL एकूण column = {v}"
 
-    # period_start / period_end
-    ps, pe = _parse_period(text)
+    # electricity_kwh — the headline number (generic patterns).
+    if val is None:
+        m = _match_first(text, _KWH_PATTERNS)
+        if m:
+            v = _parse_number(m.group(1))
+            if v is not None and 0 < v < 1e9:
+                val = v
+                raw_text = m.group(0)[:200]
+
+    if val is not None and 0 <= val < 1e9:
+        out.fields.append(DiscomField(
+            metric_key="purchased_electricity_kwh",
+            value=int(val) if val == int(val) else val,
+            unit="kWh",
+            raw_text=raw_text,
+            confidence=0.95 if val > 0 else 0.85,
+        ))
+        matched += 1
+
+    # period_start / period_end — try MSEDCL month-only format first.
+    ps: Optional[date] = None
+    pe: Optional[date] = None
+    if discom == "MSEDCL":
+        ps, pe = _msedcl_period_from_month(text)
+    if not (ps and pe):
+        ps, pe = _parse_period(text)
     if ps and pe:
         out.period_start = ps
         out.period_end = pe
@@ -333,9 +506,13 @@ def extract(text: str) -> Optional[DiscomExtraction]:
     if matched == 0:
         return None
 
-    base = 0.50 if discom != "GENERIC" else 0.30
-    bonus = 0.10 * matched
+    # Confidence model. Anchor by whether we recognised a specific DISCOM
+    # signature (vs falling back to the generic bilingual pattern), then
+    # add per-field bonuses. Tuned so that a typical bill with the kWh
+    # total + bill amount + period crosses 0.85 (the LLM-skip gate).
+    base = 0.62 if discom != "GENERIC" else 0.40
+    bonus = 0.12 * matched
     if ps and pe:
-        bonus += 0.05
+        bonus += 0.08
     out.overall_confidence = min(0.96, base + bonus)
     return out

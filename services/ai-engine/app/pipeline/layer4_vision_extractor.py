@@ -228,10 +228,12 @@ class Layer4Vision:
             return []
 
         # Electricity bill specialist (Indian DISCOMs).
-        # We try it for UTILITY_BILL, ELECTRICITY_BILL and the unhinted case
-        # because the classifier sometimes lands on a generic doc_type for
-        # clean DISCOM bills.
-        if doc_type in (None, "UTILITY_BILL", "ELECTRICITY_BILL", "OTHER"):
+        # We try it on UTILITY_BILL, ELECTRICITY_BILL, the unhinted case,
+        # OTHER (when the classifier is uncertain), and UNKNOWN (when the
+        # classifier hasn't seen this format before — e.g. MSEDCL bills
+        # whose Marathi script throws off the classifier). The extractor
+        # has its own DISCOM header signature so it self-gates safely.
+        if doc_type in (None, "UTILITY_BILL", "ELECTRICITY_BILL", "OTHER", "UNKNOWN"):
             try:
                 from app.extractors.electricity_discom import extract as discom_extract
 
@@ -336,6 +338,8 @@ class Layer4Vision:
         required: dict[str, set[str]] = {
             "UTILITY_BILL":      {"purchased_electricity_kwh"},
             "ELECTRICITY_BILL":  {"purchased_electricity_kwh"},
+            "UNKNOWN":           {"purchased_electricity_kwh"},
+            "OTHER":             {"purchased_electricity_kwh"},
             "WATER_BILL":         {"water_withdrawn_total_kl"},
             "WASTE_MANIFEST":     {"waste_hazardous_kg", "waste_non_hazardous_kg"},
             "HR_HEADCOUNT_SHEET": {"employee_count_total"},
