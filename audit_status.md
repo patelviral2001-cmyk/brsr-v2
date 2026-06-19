@@ -21,18 +21,46 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 13. Frontend Pages ✓ CLOSED
 - [x] 14. Multi Tenant ✓ CLOSED
 - [x] 15. Audit Trail ✓ CLOSED
-- [ ] 16. Background Jobs
+- [x] 16. Background Jobs ✓ CLOSED
 - [ ] 17. Deployment
 
 ---
 
 ## SCORECARD
 
-Working: 15
+Working: 16
 Broken: 0
 Missing: 0
 Fixed: 24
-Pending: 2
+Pending: 1
+
+---
+
+## MODULE 16 — BACKGROUND JOBS  ✓ CLOSED
+
+**Verified (positive) — BullMQ queues + workers in prod:**
+
+| Queue | @Processor file | Jobs completed | Jobs failed | Status |
+| --- | --- | --- | --- | --- |
+| `brsr-report` | `brsr/brsr-report.processor.ts` | 3 | 1 (stale, pre-Module-10 fix; cleaned) | healthy |
+| `calculations` | `calculations/calculation.processor.ts` | 6 (verified via lifetime ID gen + completed list) | 0 | healthy |
+| `extraction-validation` | `files/post-extraction.processor.ts` | 28 | 0 | healthy |
+| `data-source-sync` | (no processor) | 0 | 0 | unused — queue registered, no worker, no jobs enqueued |
+
+- **Global defaults** (`app.module.ts:70-82`): `attempts:3`, exponential backoff starting at 5 s, `removeOnComplete: {count:1000, age:24h}`, `removeOnFail: {count:5000, age:7d}` — sensible retention bounds prevent unbounded Redis growth.
+- **Per-job overrides** match the global defaults (seen on the stale brsr-report job dump: `attempts:3, backoff:{type:exponential, delay:5000}`).
+- **Idempotency-key support:** BRSR generation passes a deterministic `jobId` (`report-${tenantId}-${idempotencyKey}-${fmt}`) so client retries are deduped at the queue.
+- **No active, waiting, delayed or stalled jobs** at audit close — clean operational state.
+- The Module 10 PDF-crash bug surfaced precisely because of BullMQ's `bull:brsr-report:failed` sorted set — the failed-job diagnostic surface works as designed.
+
+**Issues found:** none new.
+
+**Notes:**
+- **No explicit `concurrency` on any `@Processor`** — BullMQ workers default to concurrency 1 per process. For current customer scale (1 tenant with active uploads), this is fine. Under heavier load the BRSR PDF render in particular would benefit from concurrency 2-4. Not a bug, tracked as a scaling parameter.
+- The `data-source-sync` queue is registered in `data-sources/data-sources.module.ts` but has no `@Processor`. No code path in the live audit enqueues to it, so it's silently inert. Either wire a processor or remove the registration when ERP integration ships.
+
+**Cleanup actions taken this audit:**
+- Removed 1 stale failed job (`bull:brsr-report:1`) from the pre-Module-10 PDF crash. Verified `ZCARD bull:brsr-report:failed = 0` afterwards.
 
 ---
 
