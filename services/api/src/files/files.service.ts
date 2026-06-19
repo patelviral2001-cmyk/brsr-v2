@@ -174,6 +174,17 @@ export class FilesService {
 
     let doc: any;
     try {
+      // Journey trace failure #2: dto.periodStart / dto.periodEnd are
+      // accepted by UploadFileDto + the swagger schema but were never
+      // persisted. The Document table has no period_* columns, so they
+      // were silently dropped — and the promoteToMetricEvent fallback at
+      // extraction.service.ts:208 (`field.document?.periodStart`) was
+      // therefore dead code. Stash the upload-time period in tags using
+      // a stable prefix so the callback handler can read it back.
+      const userTags = dto.tags?.split(',').map((t) => t.trim()).filter(Boolean) ?? [];
+      const periodTags: string[] = [];
+      if (dto.periodStart) periodTags.push(`period_start:${dto.periodStart}`);
+      if (dto.periodEnd) periodTags.push(`period_end:${dto.periodEnd}`);
       doc = await (this.prisma as any).document.create({
         data: {
           tenantId,
@@ -187,7 +198,7 @@ export class FilesService {
           s3Key,
           docType,
           status: 'PENDING',
-          tags: dto.tags?.split(',').map((t) => t.trim()).filter(Boolean) ?? [],
+          tags: [...userTags, ...periodTags],
         },
       });
     } catch (e: any) {
@@ -491,13 +502,28 @@ export class FilesService {
         return;
       }
 
+      // Journey trace failure #2 fix: read upload-time period from
+      // Document.tags (`period_start:YYYY-MM-DD`, `period_end:YYYY-MM-DD`)
+      // so we can fall back when the AI engine couldn't parse the bill
+      // cycle. Without this every field comes back with null period and
+      // promoteToMetricEvent silently drops the chain.
+      const tags: string[] = (doc.tags ?? []) as string[];
+      const tagPs = tags.find((t) => t.startsWith('period_start:'))?.slice('period_start:'.length);
+      const tagPe = tags.find((t) => t.startsWith('period_end:'))?.slice('period_end:'.length);
+      const docPs = tagPs ? new Date(tagPs) : undefined;
+      const docPe = tagPe ? new Date(tagPe) : undefined;
+
       for (const f of dto.fields) {
         const isNumeric = typeof f.value === 'number' || (typeof f.value === 'string' && /^-?\d+(\.\d+)?$/.test(f.value as string));
         // Period carried by the AI engine when its rule/regex extractors
         // parsed the bill cycle. Stored on the field so the later promote
         // to metric_event has the values it needs without a doc fallback.
-        const ps = f.periodStart ? new Date(f.periodStart) : undefined;
-        const pe = f.periodEnd ? new Date(f.periodEnd) : undefined;
+        let ps = f.periodStart ? new Date(f.periodStart) : undefined;
+        let pe = f.periodEnd ? new Date(f.periodEnd) : undefined;
+        // Fallback to the upload-time period the user provided in the
+        // upload DTO — only when the extractor returned nothing usable.
+        if ((!ps || Number.isNaN(ps.getTime())) && docPs && !Number.isNaN(docPs.getTime())) ps = docPs;
+        if ((!pe || Number.isNaN(pe.getTime())) && docPe && !Number.isNaN(docPe.getTime())) pe = docPe;
         await (tx as any).extractionField.create({
           data: {
             tenantId: dto.tenantId,
