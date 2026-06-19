@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { S3Storage } from '../common/utils/s3.client';
 import { hashObject, sha256 } from '../common/utils/hash';
 
 export interface AuditLogInput {
@@ -32,7 +33,10 @@ export class AuditService {
   private readonly recentKeys = new Map<string, number>();
   private static readonly DEDUPE_TTL_MS = 5_000;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3: S3Storage,
+  ) {}
 
   async log(input: AuditLogInput): Promise<void> {
     try {
@@ -190,7 +194,7 @@ export class AuditService {
           const root = merkleRoot(leaves);
           const chained = sha256(root);
 
-          this.logger.log({
+          const anchor = {
             event: 'audit_anchor',
             tenantId,
             day: since.toISOString().slice(0, 10),
@@ -199,7 +203,41 @@ export class AuditService {
             chainedRoot: chained,
             firstId: rows[0]?.id,
             lastId: rows[rows.length - 1]?.id,
-          });
+            anchoredAt: new Date().toISOString(),
+          };
+          this.logger.log(anchor);
+
+          // Persist the anchor object to the audit-chain bucket so the
+          // tamper-evidence is durable, not just a log line. The bucket
+          // is created with object-lock COMPLIANCE 10y at the storage
+          // layer — once written, anchors cannot be modified or deleted
+          // even by an admin. A regulator can compare the on-disk
+          // anchor against the recomputed Merkle root from any DB dump
+          // to verify the row set has not been tampered with.
+          try {
+            const day = since.toISOString().slice(0, 10);
+            const key = `t/${tenantId}/${day}.json`;
+            await this.s3.put({
+              bucket: 'brsr-audit-chain',
+              key,
+              body: Buffer.from(JSON.stringify(anchor, null, 2), 'utf8'),
+              contentType: 'application/json',
+              metadata: {
+                tenantId,
+                day,
+                rowCount: String(rows.length),
+                merkleRoot: root,
+              },
+            });
+          } catch (e) {
+            // Anchor-store failure is logged but does not fail the cron —
+            // the next day's run will pick up where we left off. The
+            // structured log line is still authoritative until the bucket
+            // write succeeds.
+            this.logger.warn(
+              `Anchor S3 write failed for tenant ${tenantId} day ${since.toISOString().slice(0, 10)}: ${(e as Error).message}`,
+            );
+          }
         } catch (e) {
           this.logger.warn(
             `Audit anchor failed for tenant ${tenantId}: ${(e as Error).message}`,
