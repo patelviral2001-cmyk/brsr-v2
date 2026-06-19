@@ -103,7 +103,12 @@ export class BrsrReportProcessor extends WorkerHost {
     report: { fy: string; framework: string; scopeNodeIds: string[] },
     rows: { sectionId: string; label: string; value: unknown; unit?: string }[],
   ): Promise<Buffer> {
-    const doc = new PDFDocument({ size: 'A4', margin: 50, info: { Title: `${report.framework} ${report.fy}` } });
+    // bufferPages: true lets us call switchToPage() after content has been
+    // written so we can stamp a "Page N of M" footer on every page once we
+    // know the total. Without it, PDFKit only buffers the current page and
+    // switchToPage(0) throws `out of bounds, current buffer covers pages 1
+    // to 1` — verified live in BullMQ's failed-job stacktrace before this fix.
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true, info: { Title: `${report.framework} ${report.fy}` } });
     const chunks: Buffer[] = [];
     doc.on('data', (c) => chunks.push(c as Buffer));
     const done = new Promise<Buffer>((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
