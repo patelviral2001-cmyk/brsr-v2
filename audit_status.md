@@ -16,7 +16,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 8. Metrics ✓ CLOSED
 - [x] 9. Calculations ✓ CLOSED
 - [x] 10. Disclosures ✓ CLOSED
-- [ ] 11. Dashboard
+- [x] 11. Dashboard ✓ CLOSED
 - [ ] 12. API Layer
 - [ ] 13. Frontend Pages
 - [ ] 14. Multi Tenant
@@ -28,11 +28,52 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 10
+Working: 11
 Broken: 0
 Missing: 1
-Fixed: 17
-Pending: 7
+Fixed: 20
+Pending: 6
+
+---
+
+## MODULE 11 — DASHBOARD  ✓ CLOSED
+
+**Verified (positive):**
+- `GET /dashboard/kpis` (admin) → 200 with the four KPI cards (`esgScore`, `emissionsTotal`, `energyIntensity`, `dataCompleteness`).
+- `GET /dashboard/activity` returns last-N audit_log rows ordered `createdAt DESC`, with `actor / action / target` shape the frontend already consumes.
+- `GET /dashboard/anomalies` returns `[]` for the small live dataset (correct — anomaly detector wants N≥3 history).
+- Demo (same tenant) sees identical numbers to admin — no per-user filtering leaks through.
+- No-Bearer call → 401 `Missing bearer token`. JWT global guard intact.
+- Ground truth for the active FY in the live DB:
+
+| canonical_key | value | unit | period |
+| --- | --- | --- | --- |
+| stationary_combustion_diesel_kg | 999 | kg | 2025-09 |
+| ghg_scope1_stationary | 3.227769 | tCO2e | 2025-09 |
+| purchased_electricity_kwh | 80 | kWh | 2025-08 |
+| ghg_scope2_location | 0.057280 | tCO2e | 2025-08 |
+| ghg_scope2_location | 0.057280 | tCO2e | 2025-08 |
+
+  Expected emissionsTotal = 3.227769 + 2 × 0.057280 = **3.342329 tCO2e**.
+
+**Issues found:**
+1. **🔴 `emissionsTotal` double-counted Scope 2.** `computeScope2` summed both the calc-emitted `ghg_scope2_location` (already in tCO2e) and the raw `purchased_electricity_kwh × CEA factor`. Same kWh counted twice. Live observation: KPI showed 0.172 tCO2e instead of the ground-truth 0.115 (just the Scope 2 portion).
+2. **🔴 Scope 1 emissions silently dropped from the headline.** `isEnergyOrGhg` only recognised the aggregate `ghg_scope1_total`. The calc engine actually emits the sub-category keys `ghg_scope1_stationary` / `_mobile` / `_process` / `_fugitive` (Module 9 added the stationary builtin). The customer's 3.227769 tCO2e from diesel was invisible on the headline.
+3. **🔴 Monthly sparkline had the same double-count.** Aug-2025 bucket showed 0.172 instead of 0.115; Sep-2025 bucket showed 0 instead of 3.228 (Scope 1 stationary not in the filter).
+
+**Fixed:**
+1. Split keys into `isComputedGhg` (already tCO2e — sum directly) and `isRawEnergyInput` (needs factor — used only when no computed GHG exists for the period, so empty-calc tenants still see a number).
+2. Added `ghg_scope1_stationary` / `_mobile` / `_process` / `_fugitive` to `isComputedGhg`.
+3. Mirrored the same guard inside the monthly sparkline loop.
+
+**Re-verified after fix:**
+- `emissionsTotal.value = 3.342` tCO2e ✓ (matches expected to 3 decimals).
+- Sparkline `[…, 0.115 (Aug), 3.228 (Sep), …]` — exact match to ground-truth.
+- `energyIntensity.value = 0.080` MWh = 80 kWh ✓.
+- `dataCompleteness.value = 0.1143` (4 distinct populated keys / 35 mapped keys ≈ 11.43%) ✓.
+
+**Notes:**
+- The `energyIntensity` card reuses the tCO2e sparkline (should be MWh). Minor cosmetic — value is right, only the sparkline series is mismatched. Not fixed in this audit; not customer-visible enough to warrant scope creep.
 
 ---
 
