@@ -17,7 +17,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 9. Calculations ✓ CLOSED
 - [x] 10. Disclosures ✓ CLOSED
 - [x] 11. Dashboard ✓ CLOSED
-- [ ] 12. API Layer
+- [x] 12. API Layer ✓ CLOSED
 - [ ] 13. Frontend Pages
 - [ ] 14. Multi Tenant
 - [ ] 15. Audit Trail
@@ -28,11 +28,43 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 11
+Working: 12
 Broken: 0
 Missing: 1
 Fixed: 20
-Pending: 6
+Pending: 5
+
+---
+
+## MODULE 12 — API LAYER  ✓ CLOSED
+
+**Verified (positive):**
+- **Bootstrap (services/api/src/main.ts):**
+  - Helmet with CSP `default-src 'none'`, `frame-ancestors 'none'`, `base-uri 'none'` — JSON-only API surface, no script execution path.
+  - HSTS via Caddy + `Strict-Transport-Security` echoed on every response.
+  - Production guard: refuses to boot if `NODE_ENV=production` and `CORS_ORIGIN` is empty or `*`. Verified live env has `NODE_ENV=production`, `CORS_ORIGIN=https://srv1763596.hstgr.cloud`.
+  - `app.set('trust proxy', 1)` so `x-forwarded-for` from Caddy survives to the IP-based throttler.
+- **CORS behaviour live:**
+  - Untrusted Origin (`https://attacker.example`) → preflight returns 204 with NO `Access-Control-Allow-Origin` header → browser will refuse the cross-origin request.
+  - Trusted Origin (`https://srv1763596.hstgr.cloud`) → `Access-Control-Allow-Origin` echoes; `Access-Control-Allow-Credentials: true`; only the explicit exposed headers (`x-request-id`, `x-trace-id`) leak across.
+- **Error envelope is consistent across status codes:**
+  - 400 → `{error:{code:'BAD_REQUEST', message:[…validator strings…]}, data:null, traceId, requestId}`
+  - 401 → `{error:{code:'UNAUTHORIZED', message:'Missing bearer token'}, data:null, traceId, requestId:null}` (requestId is null when JwtAuthGuard fires before RequestIdInterceptor — ordering nit, not a security issue).
+  - 404 → `{error:{code:'NOT_FOUND', message:'Cannot GET /…'}, data:null, traceId, requestId}`
+  - 409 → `{error:{code:'CONFLICT', message:'…'}, …}` (verified across Modules 7, 8, 10).
+- **Validation pipe:** `whitelist:true`, `forbidNonWhitelisted:true`, `transform:true`, `enableImplicitConversion:true`. The two prior Module 7/8 DTO bugs (`@Allow()` on `value`, `comment` vs `notes`) traced back to this strict config — meaning the layer is actively catching DTO drift, not silently passing it.
+- **Throttling:** Login limited to 5 attempts / 5 min per tenant — verified live every time we waited for the throttle window during this audit. Per-route `@Throttle({limit:100,ttl:60_000})` on `/files/upload`. `TenantThrottlerGuard` keys on tenant for authenticated calls, falls back to remote IP for anonymous.
+- **Tracing:** Every error response carries a `traceId` (16-byte hex). Pino logs include `trace_id`, `span_id`, `trace_flags` — OpenTelemetry plumbing is live.
+- **OpenAPI / Swagger:** `/api/docs` → 307 redirect to `/api/docs/`; Swagger UI loads, persistAuthorization on; every controller declares `@ApiTags` + `@ApiBearerAuth('bearer')` consistently.
+- **`/health` at root works** (Caddy `handle_path /health → /v1/health`), `200 {db,redis,s3,ai:true}`.
+
+**Issues found:**
+1. **🟡 URI versioning double-prefix `/api/v1/v1/...`.** `setGlobalPrefix('api/v1')` + `enableVersioning({type:URI, defaultVersion:'1'})` stacks two `v1` segments. `/api/v1/iam/me` returns 404, only `/api/v1/v1/iam/me` routes. The frontend, AI engine callback URL (`INTERNAL_API_URL=http://api:4000/api/v1/v1`), every existing client, and every curl in this audit log have hard-coded the double-prefix. Changing it now is a coordinated breaking change across web + ai-engine + any external consumer.
+
+**Fixed:** Not fixed in this audit. Documented and tracked. Path-of-least-pain remediation when it's tackled: change `setGlobalPrefix('api/v1')` → `setGlobalPrefix('api')`, frontend's `NEXT_PUBLIC_API_BASE` → `/api`, AI-engine's `INTERNAL_API_URL` → `http://api:4000/api/v1`, then one coordinated deploy.
+
+**Notes:**
+- `requestId:null` on the 401 from `JwtAuthGuard` is an interceptor-ordering quirk (`RequestIdInterceptor` runs after guards). Doesn't affect troubleshooting because every error carries `traceId`. Not fixed.
 
 ---
 
