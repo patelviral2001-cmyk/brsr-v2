@@ -13,7 +13,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 5. Storage ✓ CLOSED
 - [x] 6. Extraction ✓ CLOSED
 - [x] 7. Evidence ✓ CLOSED
-- [ ] 8. Metrics
+- [x] 8. Metrics ✓ CLOSED
 - [ ] 9. Calculations
 - [ ] 10. Disclosures
 - [ ] 11. Dashboard
@@ -28,11 +28,41 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 7
+Working: 8
 Broken: 0
 Missing: 1
 Fixed: 14
-Pending: 10
+Pending: 9
+
+---
+
+## MODULE 8 — METRICS  ✓ CLOSED
+
+**Verified (positive):**
+- `GET /metrics/registry?take=3` → 200 with 3 canonical metric rows (`board_meetings_count`, `business_travel_air_pkm`, …)
+- `GET /metrics/events` → returns the metric_event row promoted in Module 7 (`purchased_electricity_kwh = 80 kWh`, source_type=EXTRACTION, source_extraction_id link intact)
+- `POST /metrics/events` (demo, has `metric.write`) → 201, persisted with `sourceType=MANUAL`, `submittedBy=<demo id>`, `status=DRAFT`
+- Input validation:
+  - bad unit → 400 `Unit mismatch: expected kg, got WEEBLES`
+  - end < start → 400 `periodStart must be <= periodEnd`
+  - unknown key → 400 `Unknown metric: made_up_metric_xyz`
+  - cross-tenant scopeNodeId → 400 `scopeNodeId not found in this tenant`
+- State machine (DRAFT → SUBMITTED → APPROVED → LOCKED):
+  - demo `submit` (has `metric.submit`) → 201, status=SUBMITTED
+  - demo `approve` blocked by RBAC → 403 `Missing permissions: metric.approve`
+  - admin `approve` (has `metric.approve`) → 201, status=APPROVED, `approved_by` populated
+  - admin `lock` (has `metric.lock`) → 201, status=LOCKED
+- Domain guards on illegal transitions:
+  - re-submit a SUBMITTED → 409 `Cannot submit metric in status SUBMITTED`
+  - PATCH a LOCKED → 409 `Cannot edit a metric in status LOCKED`
+  - approve a LOCKED → 409 `Can only approve a SUBMITTED metric (got LOCKED)`
+- Segregation of duties verified live: demo submitted (`submitted_by=cmqhxlui4…`), admin approved (`approved_by=cmadmin…`).
+
+**Issues found:** none. The metrics module behaves correctly across all happy-path and adversarial inputs.
+
+**Notes:**
+- DTO uses `notes` field, service maps to `comment` column — intentional rename, no bug.
+- The service allows PATCH on both DRAFT and SUBMITTED (line `metrics.service.ts:150`). That's an explicit policy choice — submitters can amend until an approver picks it up. APPROVED/LOCKED are immutable. Not a bug.
 
 ---
 
