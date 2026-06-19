@@ -1,10 +1,11 @@
-import { Controller, Get, Query, Res, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Query, Res, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuditService } from './audit.service';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { TenantInterceptor } from '../common/interceptors/tenant.interceptor';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
+import { AbacGuard } from '../common/guards/abac.guard';
 
 @ApiTags('audit')
 @ApiBearerAuth('bearer')
@@ -14,6 +15,7 @@ export class AuditController {
   constructor(private readonly audit: AuditService) {}
 
   @Get('logs')
+  @UseGuards(AbacGuard)
   @RequirePermissions('audit.read')
   @ApiOperation({ summary: 'Query audit logs' })
   @ApiQuery({ name: 'entity', required: false })
@@ -47,6 +49,7 @@ export class AuditController {
   }
 
   @Get('logs/export')
+  @UseGuards(AbacGuard)
   @RequirePermissions('audit.export')
   @ApiOperation({ summary: 'Streaming CSV/JSONL export of audit logs' })
   @ApiQuery({ name: 'format', enum: ['csv', 'jsonl'], required: false })
