@@ -8,7 +8,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 - [x] 1. Environment ✓ CLOSED
 - [x] 2. Database ✓ CLOSED
-- [ ] 3. Authentication
+- [x] 3. Authentication ✓ CLOSED
 - [ ] 4. Upload
 - [ ] 5. Storage
 - [ ] 6. Extraction
@@ -28,11 +28,47 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 2
+Working: 3
 Broken: 0
 Missing: 0
-Fixed: 5
-Pending: 15
+Fixed: 7
+Pending: 14
+
+---
+
+## MODULE 3 — AUTHENTICATION  ✓ CLOSED
+
+**Verified (positive):**
+- Admin login `POST /iam/auth/login` → 201, JWT 283 chars, 24h `exp`
+- Demo login → 201, JWT 297 chars
+- Wrong password → 400
+- Empty body → 400 with class-validator errors
+- Missing `Authorization` → 401 `Missing bearer token`
+- Tampered signature (last byte flipped) → 401 `Invalid or expired token`
+- Random fake JWT → 401 `Invalid or expired token`
+- Refresh `POST /iam/auth/refresh` returns a NEW access token (rotation works)
+- Login throttle: 5 attempts / 5 min — `TOO_MANY_REQUESTS` after 5th attempt, resets after window
+- Tenant scoping: every `IamController` method threads `user.tenantId` into the Prisma `where`; `listUsers` returns only the caller's tenant rows (verified live: admin gets 7 users, all `tenantId=cmqhxlufj0000o01b8is3avj0`, matches DB total)
+
+**Issues found:**
+1. **🔴 RBAC bypass on audit trail** — `AuditController` declared `@RequirePermissions('audit.read')` / `'audit.export'` but had NO `@UseGuards(AbacGuard)`. Decorators were dead metadata. Demo (SUSTAINABILITY_MANAGER) read every audit log row with HTTP 200, including admin's login events.
+2. **🔴 Seed perms in wrong syntax** — `seed.ts` used colon-form (`metric:write`, `audit:*`). Every controller's `@RequirePermissions` checks dot-form (`metric.write`, `audit.read`). AbacGuard does exact-string match → every non-GROUP_ADMIN role was effectively powerless (SUSTAINABILITY_MANAGER, PLANT_MANAGER, AUDITOR could not call any guarded endpoint).
+3. The lone reason demo could read audit logs was bug #1, not bug #2.
+
+**Fixed:**
+1. Added `@UseGuards(AbacGuard)` to both `audit/logs` and `audit/logs/export` in `services/api/src/audit/audit.controller.ts`.
+2. Rewrote `SYSTEM_ROLES` in `services/api/prisma/seed.ts` with dot-form permission strings aligned to the actual `@RequirePermissions(...)` calls across every controller (43 admin perms, 30 SM perms, 9 plant-manager perms, 17 auditor perms).
+3. Hot-patched the live `role` row for `SUSTAINABILITY_MANAGER` via SQL UPDATE to apply fix without a full re-seed.
+
+**Re-verified after fix:**
+- `Admin → /audit/logs` : HTTP 200 (still works — admin has `audit.read`)
+- `Demo  → /audit/logs` : HTTP 403 `Missing permissions: audit.read` (was 200 before, now correctly blocked)
+- `Demo  → /iam/users`  : HTTP 200 (demo's role now properly grants `user.read` — read but not write)
+- `Demo  → /metrics/events/.../approve` : HTTP 403 `Missing permissions: metric.approve` (privilege escalation blocked)
+- Auth throttling, JWT signature validation, refresh rotation: all unchanged, all green
+
+**Deferred to Module 14:**
+- Cross-tenant data leak test requires a second seeded tenant — only one tenant exists today (7 users, all in `cmqhxlufj0000o01b8is3avj0`).
 
 ---
 
