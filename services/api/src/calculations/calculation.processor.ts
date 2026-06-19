@@ -91,6 +91,35 @@ export class CalculationProcessor extends WorkerHost {
         });
       }
 
+      // 2a-bis. Built-in Scope 1 stationary-combustion fallback (diesel).
+      // Same rationale as the Scope 2 builtin above — until framework_mapping
+      // grows a real Scope 1 stationary formula, derive the value inline so
+      // the calc_run returns a real number rather than 0.
+      //
+      // Factor derivation: DEFRA stationary-combustion diesel emission
+      // factor is 2.6878 kgCO2e/litre. Customer metric is captured per kg
+      // of diesel. Diesel density ≈ 0.832 kg/L, so 1 kg ≈ 1.2019 L, which
+      // gives 2.6878 × 1.2019 ≈ 3.231 kgCO2e/kg → 3.231e-3 tCO2e/kg.
+      const needScope1Stationary =
+        (requestedOutputKeys.includes('ghg_scope1_stationary') ||
+          requestedOutputKeys.includes('ghg_scope1_total') ||
+          requestedOutputKeys.length === 0) &&
+        !formulas.some(
+          (f) =>
+            f.outputKey === 'ghg_scope1_stationary' ||
+            f.outputKey === 'ghg_scope1_total',
+        );
+      if (needScope1Stationary) {
+        formulas.push({
+          id: 'builtin:scope1_stationary_from_diesel_kg',
+          outputKey: 'ghg_scope1_stationary',
+          expression: 'stationary_combustion_diesel_kg * 0.003231',
+          unit: 'tCO2e',
+          inputs: ['stationary_combustion_diesel_kg'],
+          version: 'builtin-v1',
+        });
+      }
+
       // 2b. Topologically sort by inputs
       const ordered = topoSortFormulas(formulas);
 
