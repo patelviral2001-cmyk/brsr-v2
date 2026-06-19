@@ -626,6 +626,25 @@ const CANONICAL_METRICS: CanonicalMetricSeed[] = [
     gwpBasis: 'AR6_100Y',
   },
   {
+    // Semantic synonym of purchased_electricity_kwh — the AI engine has
+    // both keys in its registry (electricity_from_grid_kwh is the
+    // "grid-only" lens; purchased_electricity_kwh is the broader purchase
+    // bucket). Without this row, anything an extractor emits as
+    // electricity_from_grid_kwh fails the promote-to-metric_event step
+    // silently (no matching canonical_metric → return null in
+    // ExtractionService.promoteToMetricEvent).
+    key: 'electricity_from_grid_kwh',
+    name: 'Electricity from grid (utility purchased, non-renewable)',
+    canonicalUnit: 'kWh',
+    allowedUnits: ['kWh', 'MWh', 'GJ'],
+    category: 'ENVIRONMENT',
+    subcategory: 'Energy',
+    dimensions: { by_facility: ['string'], by_grid_region: ['string'] },
+    aggregationRule: 'SUM',
+    boundaryTag: 'SCOPE_2_LOCATION',
+    gwpBasis: 'AR6_100Y',
+  },
+  {
     key: 'purchased_electricity_renewable_kwh',
     name: 'Purchased electricity — renewable (PPA/REC)',
     canonicalUnit: 'kWh',
