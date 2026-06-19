@@ -304,6 +304,21 @@ export class FilesService {
       include: { extractionFields: true },
     });
     if (!doc) throw new NotFoundException('Document not found');
+    // Eagerly attach a short-lived HMAC /view URL so the extraction
+    // preview pane can render the original document in an <iframe>
+    // without a follow-up signed-url round trip. Same token format as
+    // GET /files/:id/signed-url — 5 minutes TTL.
+    try {
+      const exp = Math.floor(Date.now() / 1000) + 5 * 60;
+      const token = this.signFileAccessToken(doc.id, tenantId, exp);
+      const base = (this.config.get<string>('PUBLIC_BASE_URL') ?? '').replace(/\/$/, '');
+      const path = `/api/v1/v1/files/${doc.id}/view?access=${token}`;
+      doc.signedUrl = base ? `${base}${path}` : path;
+    } catch {
+      // Missing INTERNAL_CALLBACK_SECRET would throw; degrade gracefully
+      // — the caller still gets the doc row, just no preview URL.
+      doc.signedUrl = undefined;
+    }
     return doc;
   }
 
