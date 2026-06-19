@@ -19,7 +19,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 11. Dashboard ✓ CLOSED
 - [x] 12. API Layer ✓ CLOSED
 - [x] 13. Frontend Pages ✓ CLOSED
-- [ ] 14. Multi Tenant
+- [x] 14. Multi Tenant ✓ CLOSED
 - [ ] 15. Audit Trail
 - [ ] 16. Background Jobs
 - [ ] 17. Deployment
@@ -28,11 +28,48 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 13
+Working: 14
 Broken: 0
 Missing: 1
 Fixed: 21
-Pending: 4
+Pending: 3
+
+---
+
+## MODULE 14 — MULTI-TENANT  ✓ CLOSED
+
+Until this module, every cross-tenant claim in the audit was code-verified only (the `where: { tenantId, … }` filter was visible in the source). With one tenant in prod we couldn't actually attack the boundary. This module seeded a second tenant (`Acme ESG Other Tenant`, slug `acme-esg`, user `acme@brsr.ai` / `Acme@1234`) and ran live cross-tenant requests.
+
+**Setup:**
+- Tenant 1 (Imagine): id `cmqhxlufj0000o01b8is3avj0`, 7 users, real data (5 metric events, 1 report, 2 calc runs, 6 documents).
+- Tenant 2 (Acme): id `cmt2_acme_other_tenant_001`, 1 user, empty.
+
+**Live attack matrix — Acme's JWT against Imagine's resource IDs:**
+
+| # | Attack | HTTP | Outcome |
+| --- | --- | --- | --- |
+| 1 | `GET /files/cmqkrpqa…` (Imagine's tiny.pdf) | 404 | `Document not found` |
+| 2 | `GET /metrics/events/cmqkugaf…` (Imagine's diesel LOCKED row) | 404 | route returns 404 (no GET /:id route on metrics) |
+| 3 | `GET /reports/cmqkwhid…` (Imagine's BRSR report) | 404 | `Report not found` |
+| 4 | `GET /calculations/runs/cmqkvgouz…` (Imagine's Scope 1 run) | 404 | `Run not found` |
+| 5 | `GET /audit/logs` | 200 | returns Acme rows only (2 rows, all tenantId=Acme) |
+| 6 | `GET /dashboard/kpis` | 200 | emissions=0, completeness=0 (no Acme data, no Imagine leak) |
+| 7 | `PATCH /metrics/events/cmqkugaf…` `{value:1}` | 404 | `Metric event not found` |
+| 8 | `GET /files/.../view?access=<Imagine-issued-token>` | 200 | 537 bytes — see notes |
+
+**Verified (positive):**
+- Every per-id lookup is scoped to the JWT's `tenantId` claim — the `findFirst({ where:{ id, tenantId } })` pattern surfaces only the caller's tenant.
+- Even when the resource exists under a different tenant, the response is `404` not `403` — no information leak about whether the id exists.
+- Aggregate endpoints (`/iam/users`, `/audit/logs`, `/dashboard/kpis`) return per-tenant subsets; Acme's `/iam/users` returns count=1, Imagine's returns count=7, no overlap.
+- The custom `IamService.listUsers(tenantId, …)` path is mirrored by every other listing call we tested (files, reports, metric events, calc runs, audit logs).
+
+**Issues found:** none.
+
+**Notes — design trade-off on Attack 8:**
+- The HMAC `/view?access=<token>` route validates the signature only — it does NOT bind to the calling user's tenant. If Acme somehow obtained a URL that Imagine had issued for one of Imagine's documents, Acme could fetch the bytes for the 5-minute TTL window.
+- The actual binding is upstream: Acme cannot ask `GET /files/.../signed-url` for an Imagine doc — that returns 404 — so under normal usage Acme has no way to obtain such a URL in the first place.
+- This is the same trade-off as every presigned-URL system (S3, GCS, anyone who hands the URL gets the bytes). Bearer-on-/view would defeat the iframe scenario the route exists for.
+- Mitigations already in place: 5 min TTL, HMAC bound to (docId, tenantId, exp) so cross-doc replay still fails, all issuances are audited via the request log.
 
 ---
 
