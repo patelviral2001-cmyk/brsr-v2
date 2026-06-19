@@ -22,17 +22,56 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 14. Multi Tenant ✓ CLOSED
 - [x] 15. Audit Trail ✓ CLOSED
 - [x] 16. Background Jobs ✓ CLOSED
-- [ ] 17. Deployment
+- [x] 17. Deployment ✓ CLOSED
 
 ---
 
 ## SCORECARD
 
-Working: 16
+Working: 17
 Broken: 0
 Missing: 0
 Fixed: 24
-Pending: 1
+Pending: 0
+
+**AUDIT COMPLETE — 17/17 modules closed.**
+
+---
+
+## MODULE 17 — DEPLOYMENT  ✓ CLOSED
+
+**Verified at audit close:**
+- VPS HEAD = origin/main = `2abd45c` — fully in sync.
+- VPS working tree `git status --porcelain` returns nothing — no untracked, no modified, no scp-patched files.
+- Container health: all 8 containers `healthy` (`ai-engine`, `api`, `caddy`, `minio`, `postgres`, `qdrant`, `redis`, `web`).
+- Image freshness:
+  - `brsr/api:prod`     built 2026-06-19T14:01 (carries Modules 14-15 fixes)
+  - `brsr/ai-engine:prod` built 2026-06-19T10:50 (carries Module 6 fixes)
+  - `brsr/web:prod`     built 2026-06-19T09:21 (unchanged this session — Module 13 fix was server-side)
+- Health probe `/health` returns 200 with `{db:true, redis:true, s3:true, ai:true}`.
+- Live smoke test against every key endpoint family touched in the audit:
+
+| Endpoint | HTTP |
+| --- | --- |
+| `GET /dashboard/kpis` | 200 — `emissionsTotal = 3.342 tCO2e` (Module 11 post-fix value) |
+| `GET /audit/logs` | 200 |
+| `GET /files` | 200 |
+| `GET /metrics/events` | 200 |
+| `GET /calculations/runs` | 200 |
+| `GET /reports` | 200 |
+
+**Issues found:**
+1. **🟡 VPS was 2 commits behind origin/main at start of module.** Doc-only commits b62aaa9 and 8fc865e (Module 15/16 audit closes) hadn't been pulled because the rebuild step ran before them. Resolved with `git reset --hard origin/main`.
+2. **🟡 Untracked drift on VPS production tree** — three zero-byte `qa_*.py` scratch scripts in `services/ai-engine/` and ~200 benchmark fixture files (`adani_electricity_*.json`, `waste_manifest_*`, etc.) plus `benchmark_results.json`, all sitting untracked. The qa_*.py files looked like leftover Module 1-class scp drift; the fixtures and results were intentionally not tracked (`bundle-debug.sh` already excludes them) but weren't gitignored.
+
+**Fixed:**
+1. Deleted the 3 zero-byte `qa_*.py` files on the VPS.
+2. Added `.gitignore` entries for `services/ai-engine/tests/benchmark/fixtures/`, `benchmark_results.json`, `qa_*.py`, and `tests/e2e/report.json`. Future deployment-drift audits will not surface these as noise.
+3. Re-synced VPS to the new HEAD.
+
+**Re-verified after fix:**
+- VPS `git status --porcelain` returns empty — fully clean.
+- HEAD on VPS = HEAD on origin/main = `2abd45c`.
 
 ---
 
