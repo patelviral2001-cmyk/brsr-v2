@@ -10,7 +10,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 2. Database ✓ CLOSED
 - [x] 3. Authentication ✓ CLOSED
 - [x] 4. Upload ✓ CLOSED
-- [ ] 5. Storage
+- [x] 5. Storage ✓ CLOSED
 - [ ] 6. Extraction
 - [ ] 7. Evidence
 - [ ] 8. Metrics
@@ -28,11 +28,35 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 4
+Working: 5
 Broken: 0
-Missing: 0
-Fixed: 9
-Pending: 13
+Missing: 1
+Fixed: 10
+Pending: 12
+
+---
+
+## MODULE 5 — STORAGE  ✓ CLOSED
+
+**Verified (positive):**
+- Bucket inventory: `brsr-evidence`, `brsr-extracts`, `brsr-reports`, `brsr-uploads`, `brsr-backups` (5 of the 6 declared in `infra/scripts/init-minio.sh`)
+- Active usage: only `brsr-evidence` (7 objects) and `brsr-reports` (0). The other three are declared but never written by any code path (grepped `s3.bucket*` callers — only `bucketEvidence()` and `bucketReports()` are referenced).
+- MinIO port 9000 is **not** exposed externally — Caddy has no route to it, host `:9000` connection refused. The only path in is via the API container's `presignGet`/`get`/`put`.
+- Anonymous GET inside the docker network → `HTTP 403 Forbidden` on `brsr-evidence` (Object lookup denied without credentials).
+- Tenant-scoped key layout enforced: every object lands at `t/{tenantId}/{YYYY-MM-DD}/{uuid}.{ext}` (verified live: `t/cmqhxlufj0000o01b8is3avj0/2026-06-19/4a551384-…pdf`).
+- Versioning enabled on `brsr-evidence` and `brsr-reports` per init script.
+- `infra/scripts/init-minio.sh` applies a DENY-insecure-transport policy to `brsr-evidence`.
+
+**Issues found:**
+1. **🔴 `brsr-reports` was set to anonymous policy `download`** — anyone able to reach MinIO inside the network (and anyone outside the network if Caddy ever fronted MinIO) could fetch reports without auth. Reports contain BRSR KPIs, financials, ESG narratives. Zero live objects today → no live data exposure, but the next report write would have leaked.
+2. **Missing bucket**: `brsr-audit-chain` is created by `infra/scripts/init-minio.sh` (declared with 10y compliance retention) but does NOT exist in the live MinIO inventory. The init script was never fully run in production, or the bucket was wiped. Deferred to **Module 15 — Audit Trail** for the tamper-evident chain check.
+
+**Fixed:**
+1. `mc anonymous set none local/brsr-reports` — policy reset to `private`. Re-verified anonymous GET on `brsr-reports/test.pdf` → `HTTP 403 Forbidden`.
+2. All 5 live buckets now confirmed `private`.
+
+**Deferred to other modules:**
+- `presignGet` for the reports flow returns `http://minio:9000/...` (same bug class as Module 4). The reports flow at `services/api/src/reports/reports.service.ts:41` will hit this when a customer downloads a generated BRSR. Fix path: route the report download through the same `/files/:id/view` HMAC pattern. Tracked under **Module 10 — Disclosures**.
 
 ---
 
