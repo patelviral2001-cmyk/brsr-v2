@@ -354,6 +354,19 @@ export class MetricsService {
       action: 'CREATE',
       metadata: { bulkImport: true, inserted: created.length, errors: errors.length },
     });
+    // Forensic Flow #6: also emit per-id audit rows so the per-entity
+    // drill-down view finds the change. Rollup row above stays as the
+    // batch summary; these are the indexable references.
+    for (const ev of created as { id: string }[]) {
+      await this.audit.log({
+        tenantId,
+        userId: actorId,
+        entity: 'MetricEvent',
+        entityId: ev.id,
+        action: 'CREATE',
+        metadata: { viaBulk: true },
+      });
+    }
     return { inserted: created.length, errors };
   }
 }

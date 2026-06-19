@@ -110,6 +110,24 @@ export class BrsrService {
       orderBy: { periodEnd: 'desc' },
     });
 
+    // Forensic Flow #1: if NO events fall inside the requested FY, the report
+    // would generate a 2.8 KB PDF of empty placeholders. Tell the caller
+    // immediately so the UI can suggest the correct FY before they wait for
+    // the worker to produce a useless file.
+    if (events.length === 0) {
+      const newest = await (this.prisma as any).metricEvent.findFirst({
+        where: { tenantId, status: { in: ['APPROVED', 'LOCKED'] } },
+        orderBy: { periodEnd: 'desc' },
+        select: { periodStart: true, periodEnd: true },
+      });
+      const hint = newest
+        ? ` Most recent approved data covers ${newest.periodStart.toISOString().slice(0, 10)} → ${newest.periodEnd.toISOString().slice(0, 10)}.`
+        : ' No approved metric_events exist for this tenant yet.';
+      throw new BadRequestException(
+        `No approved metric_events fall within ${dto.fy} for the requested scope.${hint}`,
+      );
+    }
+
     // Look up the document ids that backed each extraction field (single
     // batched query rather than N+1).
     const extractionIds = Array.from(new Set(events.map((e) => e.sourceExtractionId).filter((x): x is string => !!x)));

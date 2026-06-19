@@ -23,7 +23,27 @@ export class TenantThrottlerGuard extends ThrottlerGuard {
     if (tenantId) return `tenant:${tenantId}`;
     const userId: string | undefined = req?.user?.id;
     if (userId) return `user:${userId}`;
-    // True anonymous — fall back to IP (preserves login-throttling semantics).
-    return req?.ip ?? req?.headers?.['x-forwarded-for'] ?? 'unknown';
+
+    // Forensic Flow #4: behind Caddy, req.ip is always 172.18.0.1 (the
+    // proxy's docker-network IP), so an IP-keyed bucket for login is
+    // effectively global — one user's typo locks out the whole tenant.
+    // Read the left-most entry from X-Forwarded-For (added by Caddy as the
+    // real client IP) and key on that; only fall back to req.ip if XFF is
+    // missing (direct connection / tests).
+    const xff = req?.headers?.['x-forwarded-for'];
+    const xffFirst = typeof xff === 'string'
+      ? xff.split(',')[0]?.trim()
+      : Array.isArray(xff)
+        ? xff[0]
+        : undefined;
+
+    // Login endpoint: per-email bucket so one user's typo storm cannot
+    // lock out their colleagues on the same public IP.
+    const loginEmail: string | undefined = req?.body?.email;
+    if (loginEmail && req?.url?.includes('/iam/auth/login')) {
+      return `login:${String(loginEmail).toLowerCase()}`;
+    }
+
+    return xffFirst || req?.ip || 'unknown';
   }
 }

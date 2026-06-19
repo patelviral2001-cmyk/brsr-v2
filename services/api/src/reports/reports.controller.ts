@@ -26,8 +26,9 @@ export class ReportsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('take') take?: string,
     @Query('skip') skip?: string,
+    @Query('fy') fy?: string,
   ) {
-    return this.svc.list(user.tenantId, take ? Number(take) : undefined, skip ? Number(skip) : undefined);
+    return this.svc.list(user.tenantId, take ? Number(take) : undefined, skip ? Number(skip) : undefined, fy);
   }
 
   @Get(':id')

@@ -66,6 +66,18 @@ export class DashboardService {
     }
     const sparkline = this.fySparkline(monthly, periodStart);
 
+    // Forensic Flow #7: energyIntensity used to reuse the tCO2e sparkline
+    // — the card showed "MWh" headline with a tCO2e curve underneath.
+    // Build a separate MWh series from purchased_electricity_kwh.
+    const monthlyMwh = new Map<string, Decimal>();
+    for (const ev of thisFyEvents) {
+      if (ev.canonicalKey !== 'purchased_electricity_kwh') continue;
+      const ym = ev.periodEnd.toISOString().slice(0, 7);
+      const mwh = ev.value.div(1000);
+      monthlyMwh.set(ym, (monthlyMwh.get(ym) ?? new Decimal(0)).plus(mwh));
+    }
+    const energySparkline = this.fySparkline(monthlyMwh, periodStart);
+
     // Data completeness = distinct canonical_keys with data / canonical_keys
     // referenced by any framework_mapping. Stored as a 0..1 fraction so the
     // KPI card's *100 percent renderer ends up showing the right number.
@@ -97,7 +109,7 @@ export class DashboardService {
         // honest signal: customer sees their real energy use.
         value: Number(this.totalPurchasedElectricity(thisFyEvents).div(1000).toFixed(2)),
         delta: 0,
-        sparkline,
+        sparkline: energySparkline,
       },
       dataCompleteness: {
         // Fraction in [0,1] — the Dashboard KPI card formatter multiplies

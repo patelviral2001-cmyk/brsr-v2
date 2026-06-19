@@ -15,12 +15,12 @@ export class ReportsService {
     private readonly config: ConfigService,
   ) {}
 
-  async list(tenantId: string, take = 50, skip = 0) {
+  async list(tenantId: string, take = 50, skip = 0, fy?: string) {
     // Cap pagination defensively.
     const t = Math.min(Math.max(1, take), 200);
     const s = Math.max(0, skip);
     return (this.prisma as any).report.findMany({
-      where: { tenantId },
+      where: { tenantId, ...(fy ? { fy } : {}) },
       orderBy: { generatedAt: 'desc' },
       take: t,
       skip: s,
@@ -145,10 +145,25 @@ export class ReportsService {
         `Report in status ${r.status} cannot be approved. Must be one of ${[...approvableFrom].join(',')}.`,
       );
     }
-    // Schema: Report.generatedBy is the author; segregate-of-duties check
-    // refuses self-approval.
+    // Segregation of duties: creator can't approve their own report — UNLESS
+    // the tenant has no other user with `report.approve`. Forensic Flow #3:
+    // a single-admin tenant was permanently stuck at IN_REVIEW.
     if (r.generatedBy === actorId) {
-      throw new ConflictException('Creator cannot approve their own report');
+      const otherApprovers = await (this.prisma as any).user.count({
+        where: {
+          tenantId,
+          id: { not: actorId },
+          isActive: true,
+          roleAssignments: {
+            some: { role: { permissions: { has: 'report.approve' } } },
+          },
+        },
+      });
+      if (otherApprovers > 0) {
+        throw new ConflictException(
+          'Creator cannot approve their own report — ask another user with report.approve',
+        );
+      }
     }
     const updated = await (this.prisma as any).report.update({
       where: { id },

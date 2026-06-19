@@ -154,6 +154,20 @@ export class ExtractionService {
       action: 'APPROVE',
       metadata: { bulkApprove: true, count, ids: dto.ids },
     });
+    // Forensic Flow #6: also write one drill-downable audit row per id
+    // so `/audit/logs?entity=ExtractionField&entityId=<x>` surfaces the
+    // change — the rollup row above is invisible to per-entity lookups
+    // because its entityId is null.
+    for (const id of dto.ids) {
+      await this.audit.log({
+        tenantId,
+        userId: actorId,
+        entity: 'ExtractionField',
+        entityId: id,
+        action: 'APPROVE',
+        metadata: { viaBulk: true },
+      });
+    }
     // Promote each newly-approved field. Done sequentially because each
     // promote independently validates registry/unit/period — a partial
     // success is preferable to a transaction-wide rollback that would

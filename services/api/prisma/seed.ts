@@ -1206,7 +1206,16 @@ const FRAMEWORK_MAPPINGS: FrameworkMappingSeed[] = [
     frameworkCode: 'P6-Q6',
     frameworkSection: 'Principle 6',
     version: '2024',
-    canonicalKeys: ['purchased_electricity_kwh', 'purchased_electricity_renewable_kwh'],
+    // Forensic Flow #5: the AI engine's DISCOM extractor can emit either
+    // `purchased_electricity_kwh` OR `electricity_from_grid_kwh` for the
+    // same physical reading (two synonymous keys in its registry). Cover
+    // both so the BRSR P6-Q6 aggregation doesn't silently drop one half
+    // of the customer's electricity data.
+    canonicalKeys: [
+      'purchased_electricity_kwh',
+      'electricity_from_grid_kwh',
+      'purchased_electricity_renewable_kwh',
+    ],
     narrativeTemplate:
       'Scope 2 (location-based) GHG emissions were {scope2_loc_tco2e} tCO2e; market-based {scope2_mkt_tco2e} tCO2e.',
   },

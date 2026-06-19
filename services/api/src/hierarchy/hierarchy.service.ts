@@ -358,6 +358,18 @@ export class HierarchyService {
       action: 'CREATE',
       metadata: { bulkImport: true, inserted, errors: errors.length },
     });
+    // Forensic Flow #6: per-id audit rows for drill-down. byCode is the
+    // map of every successfully-created node from this batch.
+    for (const node of byCode.values() as Iterable<{ id: string; code: string }>) {
+      await this.audit.log({
+        tenantId,
+        userId: actorId,
+        entity: 'EntityNode',
+        entityId: node.id,
+        action: 'CREATE',
+        metadata: { viaBulk: true, code: node.code },
+      });
+    }
     return { inserted, errors };
   }
 

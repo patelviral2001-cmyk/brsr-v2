@@ -190,25 +190,52 @@ export class CalculationProcessor extends WorkerHost {
         }
 
         if (status === 'SUCCESS' && result.value instanceof Decimal) {
-          // Persist the calculated value as a new MetricEvent. Schema fields:
-          // sourceType (enum), sourceCalcRunId, dimensions (json), no
-          // calcFormulaId column — record version in dimensions.
-          const event = await (this.prisma as any).metricEvent.create({
-            data: {
+          // Forensic Flow #2: re-running the same calc for the same period+
+          // scope used to APPEND a fresh metric_event each time, leaving 2-N
+          // duplicates that downstream aggregations would double-count.
+          // Look for an existing CALCULATION-sourced event with the same
+          // (tenant, key, scope, period) and overwrite its value + link to
+          // the new calc_run. If none exists, create.
+          const scopeNodeId = run.scopeNodeIds[0] as string;
+          const existing = await (this.prisma as any).metricEvent.findFirst({
+            where: {
               tenantId,
               canonicalKey: f.outputKey,
-              scopeNodeId: run.scopeNodeIds[0] as string,
+              scopeNodeId,
               periodStart: run.periodStart,
               periodEnd: run.periodEnd,
-              value: result.value,
-              unit: f.unit,
               sourceType: 'CALCULATION',
-              sourceCalcRunId: runId,
-              status: 'APPROVED',
-              dimensions: { formulaVersion: f.version, formulaId: f.id },
-              submittedBy: run.computedBy,
             },
+            select: { id: true },
           });
+          const event = existing
+            ? await (this.prisma as any).metricEvent.update({
+                where: { id: existing.id },
+                data: {
+                  value: result.value,
+                  unit: f.unit,
+                  sourceCalcRunId: runId,
+                  status: 'APPROVED',
+                  dimensions: { formulaVersion: f.version, formulaId: f.id },
+                  submittedBy: run.computedBy,
+                },
+              })
+            : await (this.prisma as any).metricEvent.create({
+                data: {
+                  tenantId,
+                  canonicalKey: f.outputKey,
+                  scopeNodeId,
+                  periodStart: run.periodStart,
+                  periodEnd: run.periodEnd,
+                  value: result.value,
+                  unit: f.unit,
+                  sourceType: 'CALCULATION',
+                  sourceCalcRunId: runId,
+                  status: 'APPROVED',
+                  dimensions: { formulaVersion: f.version, formulaId: f.id },
+                  submittedBy: run.computedBy,
+                },
+              });
           metricCtx[f.outputKey] = { value: result.value, unit: f.unit };
           emittedEventIds.push(event.id);
           for (const k of f.inputs ?? []) {
