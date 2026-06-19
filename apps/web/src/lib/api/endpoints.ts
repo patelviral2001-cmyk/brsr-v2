@@ -87,6 +87,8 @@ export const ENDPOINTS = {
   scope3Run: "/carbon/scope3/run",
   netZero: "/carbon/net-zero",
   macc: "/carbon/macc",
+  abatement: "/carbon/abatement",
+  carbonCredits: "/carbon/credits",
 
   // ---- Reports ----
   reports: "/reports",

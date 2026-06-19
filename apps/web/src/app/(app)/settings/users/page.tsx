@@ -60,7 +60,25 @@ export default function UsersSettingsPage() {
     );
   }
 
-  const list = Array.isArray(users) ? users : [];
+  // Backend `/iam/users` returns { firstName, lastName, isActive, mfaEnrolled, ... }.
+  // The page's column definitions read `name / status / mfaEnabled / roles`;
+  // normalise the shape here so a missing field never reaches `initials()`
+  // (which crashed the page with `Cannot read properties of undefined (reading 'split')`).
+  const list: User[] = (Array.isArray(users) ? users : []).map((u: any) => ({
+    id: u.id,
+    email: u.email ?? "",
+    name: [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email || "—",
+    avatarUrl: u.avatarUrl,
+    roles: Array.isArray(u.roles)
+      ? u.roles
+      : Array.isArray(u.roleAssignments)
+        ? u.roleAssignments.map((ra: any) => ra?.role?.name).filter(Boolean)
+        : [],
+    scopeIds: u.scopeIds ?? [],
+    lastLoginAt: u.lastLoginAt ?? undefined,
+    mfaEnabled: u.mfaEnabled ?? u.mfaEnrolled ?? false,
+    status: u.status ?? (u.isActive === false ? "SUSPENDED" : u.lastLoginAt ? "ACTIVE" : "INVITED"),
+  }));
 
   return (
     <div className="p-6 space-y-5">

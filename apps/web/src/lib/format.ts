@@ -67,8 +67,12 @@ export function formatDateTime(date: string | Date): string {
   return format(d, "dd MMM yyyy, HH:mm");
 }
 
-export function formatRelative(date: string | Date): string {
+export function formatRelative(date: string | Date | null | undefined): string {
+  // Defensive — `formatDistanceToNow(new Date(undefined))` throws
+  // "RangeError: Invalid time value" which crashed the Audit Log page.
+  if (date == null) return "—";
   const d = typeof date === "string" ? parseISO(date) : date;
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return "—";
   return formatDistanceToNow(d, { addSuffix: true });
 }
 

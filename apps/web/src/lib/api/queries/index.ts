@@ -445,6 +445,22 @@ export const useMacc = (): UseQueryResult<AbatementProject[]> =>
     retry: DEFAULT_RETRY,
   });
 
+export const useAbatement = (): UseQueryResult<AbatementProject[]> =>
+  useQuery({
+    queryKey: ["abatement"],
+    queryFn: () => apiGet<AbatementProject[]>(ENDPOINTS.abatement),
+    staleTime: DEFAULT_STALE_MS,
+    retry: DEFAULT_RETRY,
+  });
+
+export const useCarbonCredits = (): UseQueryResult<unknown[]> =>
+  useQuery({
+    queryKey: ["carbon-credits"],
+    queryFn: () => apiGet<unknown[]>(ENDPOINTS.carbonCredits),
+    staleTime: DEFAULT_STALE_MS,
+    retry: DEFAULT_RETRY,
+  });
+
 // ===========================================================
 // Reports
 // ===========================================================
@@ -525,10 +541,21 @@ export const useMateriality = (): UseQueryResult<{
   topics: MaterialTopic[];
   stakeholders: Stakeholder[];
 }> =>
+  // Backend exposes `/materiality/topics` and `/materiality/stakeholders` as
+  // separate resources — there is no `/materiality` index. Fetch both in
+  // parallel and assemble the shape the page expects.
   useQuery({
     queryKey: ["materiality"],
-    queryFn: () =>
-      apiGet<{ topics: MaterialTopic[]; stakeholders: Stakeholder[] }>(ENDPOINTS.materiality),
+    queryFn: async () => {
+      const [topics, stakeholders] = await Promise.all([
+        apiGet<MaterialTopic[]>(ENDPOINTS.materialityTopics).catch(() => []),
+        apiGet<Stakeholder[]>("/materiality/stakeholders").catch(() => []),
+      ]);
+      return {
+        topics: Array.isArray(topics) ? topics : [],
+        stakeholders: Array.isArray(stakeholders) ? stakeholders : [],
+      };
+    },
     staleTime: DEFAULT_STALE_MS,
     retry: DEFAULT_RETRY,
   });

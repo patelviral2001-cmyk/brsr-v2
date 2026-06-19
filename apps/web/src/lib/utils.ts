@@ -22,7 +22,10 @@ export function truncate(s: string, n: number): string {
   return s.slice(0, n - 1) + "…";
 }
 
-export function initials(name: string): string {
+export function initials(name: unknown): string {
+  // Defensive — callers used to crash with "Cannot read properties of
+  // undefined (reading 'split')" when the API didn't supply a name.
+  if (typeof name !== "string" || !name.trim()) return "?";
   return name
     .split(/\s+/)
     .filter(Boolean)

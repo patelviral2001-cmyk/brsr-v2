@@ -21,7 +21,26 @@ export default function AuditLogPage() {
   const [actionFilter, setActionFilter] = useState("all");
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const list = Array.isArray(events) ? events : [];
+  // Backend `/audit/logs` returns { createdAt, actorUserId, entityId, action,
+  // entityType, diff, ... }. The page reads `at, actorName, entityName`.
+  // Normalise here so `formatRelative(ev.at)` can't crash on undefined.
+  const list = (Array.isArray(events) ? events : []).map((e: any) => ({
+    id: e.id,
+    at: e.at ?? e.createdAt ?? null,
+    action: e.action ?? "UNKNOWN",
+    entityType: e.entityType ?? "",
+    entityId: e.entityId ?? null,
+    entityName: e.entityName ?? null,
+    actorId: e.actorId ?? e.actorUserId ?? null,
+    actorEmail: e.actorEmail ?? "",
+    actorName:
+      e.actorName ??
+      // Use the last 6 chars of the user id as a short tag; better than blank.
+      (e.actorUserId ? `user/${String(e.actorUserId).slice(-6)}` : "system"),
+    diff: e.diff,
+    ip: e.ip ?? e.ipAddress ?? null,
+    userAgent: e.userAgent ?? null,
+  }));
 
   const filtered = useMemo(
     () =>
