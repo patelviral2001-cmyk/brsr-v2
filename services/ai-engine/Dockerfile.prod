@@ -1,5 +1,5 @@
 # =====================================================================
-# BRSR AI Engine — Production Dockerfile (Python 3.11 + FastAPI)
+# THE ESG — AI Engine production image (Python 3.11 + FastAPI)
 # Heavy deps: tesseract OCR, poppler (pdf), libGL for image ops.
 # =====================================================================
 

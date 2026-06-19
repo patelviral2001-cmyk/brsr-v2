@@ -261,8 +261,29 @@ export async function apiFetch<T = unknown>(
   return res.data;
 }
 
-export async function apiGet<T>(path: string, params?: Record<string, unknown>) {
+/**
+ * GET — accepts either ({ params }) or just (params) for back-compat.
+ */
+export async function apiGet<T>(
+  path: string,
+  opts?: { params?: Record<string, unknown> } | Record<string, unknown>,
+) {
+  const params = opts && typeof opts === "object" && "params" in (opts as object)
+    ? (opts as { params?: Record<string, unknown> }).params
+    : (opts as Record<string, unknown> | undefined);
   return apiFetch<T>(path, { method: "GET", params });
+}
+
+/** Multipart POST with a prebuilt FormData. */
+export async function apiPostFormData<T>(path: string, fd: FormData) {
+  const res = await apiClient.request<T>({
+    url: path,
+    method: "POST",
+    data: fd,
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 5 * 60 * 1000,
+  });
+  return res.data;
 }
 
 export async function apiPost<T>(path: string, data?: unknown, config?: AxiosRequestConfig) {

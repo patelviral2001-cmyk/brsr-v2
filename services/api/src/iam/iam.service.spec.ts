@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { KeycloakClient } from '../common/utils/keycloak-client';
-import { AuditService } from '../audit/audit.service';
+import { AuditTrailService } from '../audit-trail/audit-trail.service';
 
 describe('IamService', () => {
   let service: IamService;
@@ -17,7 +17,7 @@ describe('IamService', () => {
         { provide: ConfigService, useValue: { get: jest.fn() } },
         { provide: HttpService, useValue: {} },
         { provide: KeycloakClient, useValue: {} },
-        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: AuditTrailService, useValue: { log: jest.fn() } },
       ],
     }).compile();
     service = mod.get(IamService);

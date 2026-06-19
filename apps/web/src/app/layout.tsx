@@ -4,14 +4,14 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: {
-    default: "BRSR AI Platform — The ESG operating system for Indian enterprises",
-    template: "%s · BRSR AI Platform",
+    default: "THE ESG — AI Native Sustainability Operating System",
+    template: "%s · THE ESG",
   },
   description:
-    "Enterprise-grade ESG platform for BRSR, GRI, SASB, TCFD, IFRS S2, CSRD reporting with AI extraction, multi-framework mapping and Big-4 assurance.",
-  applicationName: "BRSR AI Platform",
-  authors: [{ name: "BRSR AI" }],
-  keywords: ["BRSR", "ESG", "Sustainability", "GRI", "SASB", "TCFD", "IFRS S2"],
+    "Upload evidence. Get audit-ready ESG disclosures. THE ESG converts bills, spreadsheets and forms into structured, traceable ESG data for BRSR, GRI and CDP.",
+  applicationName: "THE ESG",
+  authors: [{ name: "THE ESG" }],
+  keywords: ["ESG", "Sustainability", "BRSR", "GRI", "CDP", "India"],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

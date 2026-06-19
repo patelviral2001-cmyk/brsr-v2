@@ -1,302 +1,167 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Decimal } from 'decimal.js';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { S3Storage } from '../common/utils/s3.client';
-import { AuditService } from '../audit/audit.service';
-import {
-  BulkApproveDto,
-  ExtractionQueueQueryDto,
-  RejectExtractionFieldDto,
-  UpdateExtractionFieldDto,
-} from './dto/extraction.dto';
+import { AuditTrailService } from '../audit-trail/audit-trail.service';
+import { ConfirmExtractionDto, ExtractionCallbackDto } from './extraction.dto';
+import { fyLabel } from './fy.util';
+
+/**
+ * Document-type → suggested KPI codes. The AI engine's payload provides the
+ * raw fields; the Evidence Review screen lets the SM map them to KPIs and
+ * confirm. These hints drive the default mapping the UI offers.
+ */
+const SUGGESTED_KPIS: Record<string, string[]> = {
+  ELECTRICITY_BILL_V1: ['grid_electricity_kwh'],
+  DIESEL_BILL_V1:      ['diesel_stationary_l'],
+  WATER_BILL_V1:       ['water_withdrawal_m3'],
+  PNG_BILL_V1:         ['png_consumed_m3'],
+  UNKNOWN_V1:          [],
+};
 
 @Injectable()
 export class ExtractionService {
+  private readonly logger = new Logger(ExtractionService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly s3: S3Storage,
-    private readonly audit: AuditService,
+    private readonly audit: AuditTrailService,
   ) {}
 
-  async queue(tenantId: string, q: ExtractionQueueQueryDto) {
-    const maxConf = q.maxConfidence ?? 0.85;
-    const take = Math.min(Math.max(1, q.take ?? 50), 200);
-    // Schema ExtractionStatus enum: DRAFT|NEEDS_REVIEW|APPROVED|REJECTED|OVERRIDDEN.
-    // The page's purpose is "fields that haven't yet reached metric_event":
-    // both NEEDS_REVIEW (low-confidence) and DRAFT (fresh, not yet approved).
-    // The previous OR filter dropped high-confidence DRAFT rows, so newly
-    // extracted bills were invisible to the customer.
-    const statusFilter = q.status
-      ? { status: q.status as any }
-      : { status: { in: ['NEEDS_REVIEW', 'DRAFT'] as string[] } };
-    return (this.prisma as any).extractionField.findMany({
-      where: {
-        tenantId,
-        documentId: q.documentId,
-        ...statusFilter,
-      },
-      include: { document: { select: { id: true, originalName: true, docType: true } } },
-      orderBy: [{ confidenceComposite: 'asc' }, { createdAt: 'asc' }],
-      take,
+  // AI callback —> ExtractionResult row + Evidence state advance ----
+  async handleCallback(dto: ExtractionCallbackDto) {
+    const ev = await this.prisma.evidence.findFirst({
+      where: { id: dto.documentId, tenantId: dto.tenantId },
     });
-  }
+    if (!ev) throw new NotFoundException('Evidence not found for callback');
 
-  async getField(tenantId: string, id: string) {
-    const field = await (this.prisma as any).extractionField.findFirst({
-      where: { id, tenantId },
-      include: { document: true },
-    });
-    if (!field) throw new NotFoundException('Field not found');
-    const signedUrl = await this.s3.presignGet(field.document.s3Bucket, field.document.s3Key, 600);
-    return { ...field, sourcePreviewUrl: signedUrl };
-  }
-
-  async update(tenantId: string, id: string, dto: UpdateExtractionFieldDto, actorId: string) {
-    const before = await (this.prisma as any).extractionField.findFirst({ where: { id, tenantId } });
-    if (!before) throw new NotFoundException('Field not found');
-    if (before.status === 'APPROVED') throw new ConflictException('Field already approved');
-
-    // Schema columns: valueText, valueNum, unitExtracted, overrideReason,
-    // reviewedBy, reviewedAt. Decide numeric vs textual based on input.
-    const isNumeric = typeof dto.value === 'number' || (typeof dto.value === 'string' && /^-?\d+(\.\d+)?$/.test(dto.value));
-    const updated = await (this.prisma as any).extractionField.update({
-      where: { id },
-      data: {
-        valueText: isNumeric ? null : (typeof dto.value === 'object' ? JSON.stringify(dto.value) : String(dto.value ?? '')),
-        valueNum: isNumeric ? new Decimal(String(dto.value)) : null,
-        unitExtracted: dto.unit ?? before.unitExtracted,
-        overrideReason: dto.notes,
-        status: 'OVERRIDDEN',
-        reviewedAt: new Date(),
-        reviewedBy: actorId,
-      },
-    });
-    await this.audit.log({
-      tenantId,
-      userId: actorId,
-      entity: 'ExtractionField',
-      entityId: id,
-      action: 'OVERRIDE',
-      before,
-      after: updated,
-    });
-    return updated;
-  }
-
-  async reject(tenantId: string, id: string, dto: RejectExtractionFieldDto, actorId: string) {
-    const before = await (this.prisma as any).extractionField.findFirst({ where: { id, tenantId } });
-    if (!before) throw new NotFoundException('Field not found');
-    const updated = await (this.prisma as any).extractionField.update({
-      where: { id },
-      data: {
-        status: 'REJECTED',
-        overrideReason: dto.reason,
-        reviewedAt: new Date(),
-        reviewedBy: actorId,
-      },
-    });
-    await this.audit.log({
-      tenantId,
-      userId: actorId,
-      entity: 'ExtractionField',
-      entityId: id,
-      action: 'REJECT',
-      before,
-      after: updated,
-      metadata: { reason: dto.reason },
-    });
-    return updated;
-  }
-
-  async approve(tenantId: string, id: string, actorId: string) {
-    const before = await (this.prisma as any).extractionField.findFirst({
-      where: { id, tenantId },
-      include: { document: true },
-    });
-    if (!before) throw new NotFoundException('Field not found');
-    if (before.status === 'APPROVED') return before;
-
-    const updated = await (this.prisma as any).extractionField.update({
-      where: { id },
-      data: { status: 'APPROVED', reviewedAt: new Date(), reviewedBy: actorId },
-    });
-    await this.audit.log({
-      tenantId,
-      userId: actorId,
-      entity: 'ExtractionField',
-      entityId: id,
-      action: 'APPROVE',
-      before,
-      after: updated,
-    });
-    // Promote the approved extraction into a MetricEvent so downstream
-    // calculations, framework mappings, and reports can see the value.
-    // Without this hop the lineage stops at extraction_field — nothing
-    // ever reaches metric_event, calc_run, or any disclosure.
-    await this.promoteToMetricEvent({ ...updated, document: before.document }, actorId);
-    return updated;
-  }
-
-  async bulkApprove(tenantId: string, dto: BulkApproveDto, actorId: string) {
-    if (!dto.ids?.length) return { approved: 0 };
-    if (dto.ids.length > 1000) {
-      throw new ConflictException('Bulk-approve capped at 1,000 ids per request');
-    }
-    const { count } = await (this.prisma as any).extractionField.updateMany({
-      where: { id: { in: dto.ids }, tenantId, status: { not: 'APPROVED' } },
-      data: { status: 'APPROVED', reviewedAt: new Date(), reviewedBy: actorId },
-    });
-    await this.audit.log({
-      tenantId,
-      userId: actorId,
-      entity: 'ExtractionField',
-      entityId: null,
-      action: 'APPROVE',
-      metadata: { bulkApprove: true, count, ids: dto.ids },
-    });
-    // Forensic Flow #6: also write one drill-downable audit row per id
-    // so `/audit/logs?entity=ExtractionField&entityId=<x>` surfaces the
-    // change — the rollup row above is invisible to per-entity lookups
-    // because its entityId is null.
-    for (const id of dto.ids) {
-      await this.audit.log({
-        tenantId,
-        userId: actorId,
-        entity: 'ExtractionField',
-        entityId: id,
-        action: 'APPROVE',
-        metadata: { viaBulk: true },
+    if (dto.error) {
+      await this.prisma.evidence.update({
+        where: { id: ev.id },
+        data: { status: 'FAILED', failureReason: dto.error.slice(0, 500) },
       });
+      return { ok: true };
     }
-    // Promote each newly-approved field. Done sequentially because each
-    // promote independently validates registry/unit/period — a partial
-    // success is preferable to a transaction-wide rollback that would
-    // strand the approval audit log without any metric_events.
-    const approvedFields = await (this.prisma as any).extractionField.findMany({
-      where: { id: { in: dto.ids }, tenantId, status: 'APPROVED' },
-      include: { document: true },
+
+    await this.prisma.extractionResult.create({
+      data: {
+        tenantId: dto.tenantId,
+        evidenceId: ev.id,
+        schemaCode: dto.schemaCode || 'UNKNOWN_V1',
+        payload: (dto.payload ?? {}) as object,
+        confidence: dto.confidence ?? 0,
+        rawText: dto.rawText,
+        status: 'READY',
+      },
     });
-    let promoted = 0;
-    for (const f of approvedFields) {
-      try {
-        const created = await this.promoteToMetricEvent(f, actorId);
-        if (created) promoted++;
-      } catch {
-        // promoteToMetricEvent already logs; continue with the rest.
+
+    await this.prisma.evidence.update({
+      where: { id: ev.id },
+      data: {
+        status: 'REVIEW_NEEDED',
+        docType: (dto.docTypeDetected ?? ev.docType) || 'UNKNOWN',
+        classifierConfidence: dto.confidence ?? null,
+      },
+    });
+    return { ok: true };
+  }
+
+  // Promotion: user-confirmed extraction → DataPoint rows ----------
+  async confirm(tenantId: string, evidenceId: string, dto: ConfirmExtractionDto, actorId: string) {
+    const ev = await this.prisma.evidence.findFirst({
+      where: { id: evidenceId, tenantId },
+      include: { extractions: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+    if (!ev) throw new NotFoundException('Evidence not found');
+
+    const site = await this.prisma.site.findFirst({ where: { id: dto.siteId, tenantId } });
+    if (!site) throw new BadRequestException('Site not found in this tenant');
+
+    const periodStart = new Date(dto.periodStart);
+    const periodEnd   = new Date(dto.periodEnd);
+    if (Number.isNaN(periodStart.getTime()) || Number.isNaN(periodEnd.getTime())) {
+      throw new BadRequestException('Invalid period');
+    }
+    if (periodStart > periodEnd) throw new BadRequestException('periodStart must be ≤ periodEnd');
+
+    const re = await this.prisma.reportingEntity.findFirst({
+      where: { tenantId, id: dto.reportingEntityId ?? undefined },
+    });
+
+    const fy = fyLabel(periodStart);
+
+    const created: any[] = [];
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const dp of dto.dataPoints) {
+        const kpi = await tx.kpi.findUnique({ where: { code: dp.kpiCode } });
+        if (!kpi) throw new BadRequestException(`Unknown KPI: ${dp.kpiCode}`);
+
+        // Upsert on uniqueness (tenant, kpi, site, re, periodStart) — re-confirm overwrites.
+        const existing = await tx.dataPoint.findFirst({
+          where: {
+            tenantId, kpiId: kpi.id, siteId: dto.siteId, reportingEntityId: re?.id ?? null,
+            periodStart,
+          },
+        });
+
+        const data = {
+          tenantId,
+          kpiId: kpi.id,
+          siteId: dto.siteId,
+          reportingEntityId: re?.id ?? null,
+          periodStart,
+          periodEnd,
+          fy,
+          payload: dp.payload as object,
+          source: 'EXTRACTED',
+          evidenceId,
+          extractionResultId: ev.extractions[0]?.id ?? null,
+          confidenceScore: dp.confidence ?? ev.extractions[0]?.confidence ?? null,
+          status: 'CONFIRMED',
+          submittedBy: actorId,
+        };
+
+        const row = existing
+          ? await tx.dataPoint.update({ where: { id: existing.id }, data })
+          : await tx.dataPoint.create({ data });
+        created.push(row);
       }
-    }
-    return { approved: count, promotedToMetricEvent: promoted };
-  }
 
-  /**
-   * Create a MetricEvent row from an APPROVED ExtractionField, linking it via
-   * sourceExtractionId so the full lineage (document → extraction → metric →
-   * calc → report) is queryable. Returns the created event, or null if the
-   * promotion was skipped (e.g. unknown canonical_key, missing period).
-   */
-  private async promoteToMetricEvent(
-    field: any,
-    actorId: string,
-  ): Promise<any | null> {
-    // 1. Idempotency — never create two metric_events for the same extraction.
-    const existing = await (this.prisma as any).metricEvent.findFirst({
-      where: { tenantId: field.tenantId, sourceExtractionId: field.id },
-      select: { id: true },
+      // Update extraction status + evidence status
+      if (ev.extractions[0]) {
+        await tx.extractionResult.update({
+          where: { id: ev.extractions[0].id },
+          data: { status: 'PROMOTED', reviewedBy: actorId, reviewedAt: new Date() },
+        });
+      }
+      await tx.evidence.update({ where: { id: evidenceId }, data: { status: 'CONFIRMED', siteId: dto.siteId } });
     });
-    if (existing) return existing;
 
-    // 2. Canonical-metric registry must know this key. If the DISCOM extractor
-    //    emitted a key that's not in canonical_metric, log and skip rather
-    //    than silently create an orphan metric_event.
-    const reg = await (this.prisma as any).canonicalMetric.findUnique({
-      where: { key: field.canonicalKey },
-    });
-    if (!reg) {
-      // logger via audit only — service layer; avoid noise on every approve.
-      return null;
-    }
-
-    // 3. Period: prefer the field's own period (extractor-parsed), then fall
-    //    back to the document's period if present.
-    const periodStart: Date | null =
-      field.periodStart ?? field.document?.periodStart ?? null;
-    const periodEnd: Date | null =
-      field.periodEnd ?? field.document?.periodEnd ?? null;
-    if (!periodStart || !periodEnd) return null;
-
-    // 4. Numeric value required for a metric_event. Text-only extractions
-    //    (narratives, categorical) don't become metric_events.
-    if (field.valueNum == null) return null;
-
-    // 5. Unit: trust the extracted unit but ensure it's in the allowed set
-    //    for this canonical metric. Mismatch → skip (the extractor is wrong;
-    //    forcing a bad unit into metric_event would corrupt downstream calcs).
-    const unit: string = field.unitExtracted ?? reg.canonicalUnit ?? '';
-    const allowed = (reg.allowedUnits ?? []) as string[];
-    if (reg.canonicalUnit && reg.canonicalUnit !== unit && !allowed.includes(unit)) {
-      return null;
-    }
-
-    // 6. Scope node from the parent document. If the document had no scope
-    //    assigned, the metric can't be attributed — skip.
-    const scopeNodeId: string | null = field.document?.scopeNodeId ?? null;
-    if (!scopeNodeId) return null;
-
-    const event = await (this.prisma as any).metricEvent.create({
-      data: {
-        tenantId: field.tenantId,
-        canonicalKey: field.canonicalKey,
-        scopeNodeId,
-        periodStart,
-        periodEnd,
-        value: field.valueNum,
-        unit,
-        sourceType: 'EXTRACTION' as any,
-        sourceExtractionId: field.id,
-        confidenceLevel: this.confidenceLevelOf(field.confidenceComposite),
-        dataQualityScore: field.confidenceComposite,
-        status: 'DRAFT' as any,
-        submittedBy: actorId,
-        comment: `Auto-promoted from approved extraction ${field.id}`,
-      },
-    });
-    await this.audit.log({
-      tenantId: field.tenantId,
-      userId: actorId,
-      entity: 'MetricEvent',
-      entityId: event.id,
-      action: 'CREATE',
-      after: event,
-      metadata: { autoPromotedFrom: field.id },
-    });
-    return event;
-  }
-
-  private confidenceLevelOf(score: number | null | undefined): string | null {
-    if (score == null) return null;
-    if (score >= 0.85) return 'HIGH';
-    if (score >= 0.65) return 'MEDIUM';
-    return 'LOW';
-  }
-
-  async stats(tenantId: string) {
-    const byStatus: { status: string; _count: { _all: number } }[] =
-      await (this.prisma as any).extractionField.groupBy({
-        by: ['status'],
-        where: { tenantId },
-        _count: { _all: true },
+    for (const dp of created) {
+      await this.audit.log({
+        tenantId, userId: actorId, entity: 'DataPoint', entityId: dp.id, action: 'CREATE',
+        after: { kpiCode: dto.dataPoints.find(d => true)?.kpiCode, period: dto.periodStart },
       });
-    const recent: { _count: { _all: number } } = await (this.prisma as any).extractionField.aggregate({
-      where: { tenantId, reviewedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
-      _count: { _all: true },
+    }
+    await this.audit.log({
+      tenantId, userId: actorId, entity: 'Evidence', entityId: evidenceId, action: 'CONFIRM',
+      metadata: { dataPointCount: created.length, siteId: dto.siteId },
     });
-    const lowConfidence: number = await (this.prisma as any).extractionField.count({
-      where: { tenantId, confidenceComposite: { lt: 0.85 }, status: { not: 'APPROVED' } },
+
+    return { ok: true, created };
+  }
+
+  async hold(tenantId: string, evidenceId: string, reason: string, actorId: string) {
+    const ev = await this.prisma.evidence.findFirst({ where: { id: evidenceId, tenantId } });
+    if (!ev) throw new NotFoundException('Evidence not found');
+    const updated = await this.prisma.evidence.update({
+      where: { id: evidenceId },
+      data: { status: 'REVIEW_NEEDED', failureReason: reason.slice(0, 500) },
     });
-    return {
-      byStatus: Object.fromEntries(byStatus.map((s) => [s.status, s._count._all])),
-      reviewedLast24h: recent._count._all,
-      pendingLowConfidence: lowConfidence,
-    };
+    await this.audit.log({ tenantId, userId: actorId, entity: 'Evidence', entityId: evidenceId, action: 'UPDATE', metadata: { hold: true, reason } });
+    return updated;
+  }
+
+  suggestedKpisFor(schemaCode: string): string[] {
+    return SUGGESTED_KPIS[schemaCode] ?? [];
   }
 }

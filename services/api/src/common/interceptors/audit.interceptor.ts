@@ -3,18 +3,18 @@ import { Reflector } from '@nestjs/core';
 import { Observable, tap } from 'rxjs';
 import { get as lget } from 'lodash';
 import { AUDIT_KEY, AuditMetadata } from '../decorators/audit.decorator';
-import { AuditService } from '../../audit/audit.service';
+import { AuditTrailService } from '../../audit-trail/audit-trail.service';
 
 /**
  * Captures successful invocations of audited handlers and writes an AuditLog
  * row. Hashing into the daily Merkle chain is intentionally NOT done per
- * request — a nightly cron in AuditService handles that for throughput.
+ * request — a nightly cron in AuditTrailService handles that for throughput.
  */
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   constructor(
     private readonly reflector: Reflector,
-    private readonly audit: AuditService,
+    private readonly audit: AuditTrailService,
   ) {}
 
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {

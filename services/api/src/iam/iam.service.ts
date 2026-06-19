@@ -15,7 +15,7 @@ import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { KeycloakClient } from '../common/utils/keycloak-client';
-import { AuditService } from '../audit/audit.service';
+import { AuditTrailService } from '../audit-trail/audit-trail.service';
 import { ExchangeCodeDto } from './dto/auth.dto';
 import { InviteUserDto, UpdateUserDto } from './dto/users.dto';
 import { AssignRoleDto, CreateRoleDto } from './dto/roles.dto';
@@ -48,7 +48,7 @@ export class IamService {
     private readonly kc: KeycloakClient,
     private readonly http: HttpService,
     private readonly config: ConfigService,
-    private readonly audit: AuditService,
+    private readonly audit: AuditTrailService,
   ) {}
 
   /**

@@ -58,7 +58,7 @@ export function ErrorFallback({
   onRetry: () => void;
 }) {
   const subject = encodeURIComponent(
-    `[BRSR AI] Frontend error: ${error.message.slice(0, 80)}`,
+    `[THE ESG] Frontend error: ${error.message.slice(0, 80)}`,
   );
   const body = encodeURIComponent(
     `Error: ${error.message}\n\nStack:\n${error.stack ?? "(no stack)"}\n\nURL: ${

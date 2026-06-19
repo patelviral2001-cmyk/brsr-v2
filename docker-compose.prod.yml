@@ -1,5 +1,5 @@
 # =====================================================================
-# BRSR AI Platform v2 — Production Docker Compose
+# THE ESG — Production Docker Compose
 # Target: Single Hostinger KVM 4 VPS (16GB RAM, 4 vCPU, Ubuntu 24.04)
 #
 # Bring-up order (managed by ./scripts/deploy.sh):

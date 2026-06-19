@@ -1,662 +1,282 @@
-/**
- * TanStack Query hooks. Every hook funnels through `apiClient` so the
- * DEMO_MODE switch, auth header, retry / refresh, and trace headers all
- * apply uniformly. Hooks return typed `UseQueryResult` / `UseMutationResult`
- * so consumers get full inference without `as`-casts.
- */
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseMutationResult,
-  type UseQueryResult,
-} from "@tanstack/react-query";
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut, apiUpload } from "../client";
-import { ENDPOINTS } from "../endpoints";
-import type {
-  Tenant,
-  User,
-  Role,
-  HierarchyNode,
-  FileObject,
-  ExtractedField,
-  MetricDefinition,
-  MetricEvent,
-  CalculationRun,
-  Framework,
-  BRSRSection,
-  Report,
-  Supplier,
-  MaterialTopic,
-  AssuranceSnapshot,
-  AssuranceException,
-  AuditEvent,
-  CopilotConversation,
-  EmissionsBreakdown,
-  Scope3Category,
-  AbatementProject,
-  NetZeroTarget,
-  Stakeholder,
-} from "@/types";
+"use client";
 
-// ----- Shared types -----
-export interface ExtractionStats {
-  pending: number;
-  approved: number;
-  rejected: number;
-  avgConfidence: number;
+import { useMutation, useQuery, useQueryClient, UseQueryResult } from "@tanstack/react-query";
+import { apiGet, apiPost, apiPatch, apiDelete, apiPostFormData } from "../client";
+import { ENDPOINTS } from "../endpoints";
+
+// ─── Types (small, just what the UI needs) ─────────────────────────────
+
+export interface Site {
+  id: string;
+  tenantId: string;
+  name: string;
+  externalCode?: string;
+  siteType: string;
+  state?: string;
+  district?: string;
+  city?: string;
+  status: string;
+  createdAt: string;
 }
 
-type EmissionsOverview = EmissionsBreakdown & {
-  monthlyTrend: { month: string; scope1: number; scope2: number; scope3: number }[];
-  energyMix: { source: string; mwh: number; renewable: boolean }[];
-  intensityTrend: { fy: string; perRevenue: number; perFTE: number }[];
+export interface Evidence {
+  id: string;
+  tenantId: string;
+  siteId?: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+  docType: string;
+  status: string;
+  classifierConfidence?: number;
+  uploadedAt: string;
+  uploadedBy: string;
+  hintPeriodStart?: string;
+  hintPeriodEnd?: string;
+  signedUrl?: string;
+  site?: { id: string; name: string };
+  extractions?: ExtractionResult[];
+  _count?: { extractions: number };
+}
+
+export interface ExtractionResult {
+  id: string;
+  evidenceId: string;
+  schemaCode: string;
+  payload: Record<string, unknown>;
+  confidence: number;
+  status: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
+}
+
+export interface Kpi {
+  id: string;
+  code: string;
+  title: string;
+  description?: string;
+  payloadKind: string;       // QUANTITATIVE | PROPORTION | DIMENSIONAL | NARRATIVE | EVENT_LIST
+  unit?: string;
+  materializationKind: string;
+  topic: { code: string; title: string; pillar: "E" | "S" | "G" };
+}
+
+export interface DataPoint {
+  id: string;
+  tenantId: string;
+  kpiId: string;
+  siteId?: string;
+  periodStart: string;
+  periodEnd: string;
+  fy: string;
+  payload: Record<string, unknown>;
+  source: string;
+  status: string;
+  evidenceId?: string;
+  confidenceScore?: number;
+  submittedAt: string;
+  submittedBy: string;
+  kpi?: Kpi;
+  site?: Site;
+  evidence?: Pick<Evidence, "id" | "originalName" | "status">;
+}
+
+export interface AuditTrailEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  actorUserId?: string;
+  createdAt: string;
+  diff?: { before?: unknown; after?: unknown; metadata?: Record<string, unknown> };
+}
+
+// ─── Sites ─────────────────────────────────────────────────────────────
+
+export const useSites = (): UseQueryResult<Site[]> =>
+  useQuery({ queryKey: ["sites"], queryFn: () => apiGet<Site[]>(ENDPOINTS.sites) });
+
+export const useSite = (id: string | null): UseQueryResult<Site> =>
+  useQuery({
+    queryKey: ["site", id],
+    queryFn: () => apiGet<Site>(ENDPOINTS.site(id!)),
+    enabled: !!id,
+  });
+
+export const useCreateSite = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: Partial<Site> & { name: string; siteType: string }) =>
+      apiPost<Site>(ENDPOINTS.sites, dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sites"] }),
+  });
 };
 
-const DEFAULT_STALE_MS = 30_000;
-const DEFAULT_RETRY = 2;
-
-// ===========================================================
-// Tenant / Users / Roles
-// ===========================================================
-export const useTenant = (): UseQueryResult<Tenant> =>
-  useQuery({
-    queryKey: ["tenant"],
-    queryFn: () => apiGet<Tenant>(ENDPOINTS.tenantMe),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useTenantSettings = (): UseQueryResult<Record<string, unknown>> =>
-  useQuery({
-    queryKey: ["tenant", "settings"],
-    queryFn: () => apiGet<Record<string, unknown>>(ENDPOINTS.tenantSettings),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export function useUpdateTenantSettings(): UseMutationResult<
-  Record<string, unknown>,
-  Error,
-  Record<string, unknown>
-> {
+export const useUpdateSite = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch) => apiPatch<Record<string, unknown>>(ENDPOINTS.tenantSettings, patch),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tenant"] });
-      qc.invalidateQueries({ queryKey: ["tenant", "settings"] });
+    mutationFn: ({ id, ...dto }: Partial<Site> & { id: string }) =>
+      apiPatch<Site>(ENDPOINTS.site(id), dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sites"] }),
+  });
+};
+
+export const useDeactivateSite = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiDelete<void>(ENDPOINTS.site(id)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sites"] }),
+  });
+};
+
+// ─── Evidence ──────────────────────────────────────────────────────────
+
+export const useEvidenceList = (params?: { status?: string; siteId?: string }): UseQueryResult<Evidence[]> =>
+  useQuery({
+    queryKey: ["evidence", params],
+    queryFn: () => apiGet<Evidence[]>(ENDPOINTS.evidence, { params }),
+    refetchInterval: 4000, // pipeline state can advance asynchronously
+  });
+
+export const useEvidence = (id: string | null): UseQueryResult<Evidence> =>
+  useQuery({
+    queryKey: ["evidence", id],
+    queryFn: () => apiGet<Evidence>(ENDPOINTS.evidenceDetail(id!)),
+    enabled: !!id,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      // Poll while pipeline is in flight; stop once it's a terminal state.
+      if (!s) return 3000;
+      return ["PENDING", "CLASSIFIED"].includes(s) ? 2500 : false;
     },
   });
-}
 
-export const useUsers = (): UseQueryResult<User[]> =>
-  useQuery({
-    queryKey: ["users"],
-    queryFn: () => apiGet<User[]>(ENDPOINTS.users),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useRoles = (): UseQueryResult<Role[]> =>
-  useQuery({
-    queryKey: ["roles"],
-    queryFn: () => apiGet<Role[]>(ENDPOINTS.roles),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-// ===========================================================
-// Hierarchy
-// ===========================================================
-export const useHierarchy = (): UseQueryResult<HierarchyNode> =>
-  useQuery({
-    queryKey: ["hierarchy"],
-    queryFn: () => apiGet<HierarchyNode>(ENDPOINTS.hierarchy),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-// Alias matching the spec.
-export const useHierarchyTree = useHierarchy;
-
-export const useHierarchyNode = (id: string | null): UseQueryResult<HierarchyNode> =>
-  useQuery({
-    queryKey: ["hierarchy", id],
-    queryFn: () => apiGet<HierarchyNode>(ENDPOINTS.hierarchyNode(id!)),
-    enabled: !!id,
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export function useCreateNode(): UseMutationResult<
-  HierarchyNode,
-  Error,
-  Partial<HierarchyNode> & { parentId: string | null; name: string; type: HierarchyNode["type"] }
-> {
+export const useUploadEvidence = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input) => apiPost<HierarchyNode>(ENDPOINTS.hierarchyNodes, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["hierarchy"] }),
+    mutationFn: (params: {
+      file: File;
+      siteId?: string;
+      docTypeHint?: string;
+      hintPeriodStart?: string;
+      hintPeriodEnd?: string;
+    }) => {
+      const fd = new FormData();
+      fd.append("file", params.file);
+      if (params.siteId) fd.append("siteId", params.siteId);
+      if (params.docTypeHint) fd.append("docTypeHint", params.docTypeHint);
+      if (params.hintPeriodStart) fd.append("hintPeriodStart", params.hintPeriodStart);
+      if (params.hintPeriodEnd) fd.append("hintPeriodEnd", params.hintPeriodEnd);
+      return apiPostFormData<Evidence>(ENDPOINTS.evidenceUpload, fd);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["evidence"] }),
   });
-}
+};
 
-export function useUpdateNode(): UseMutationResult<
-  HierarchyNode,
-  Error,
-  { id: string; patch: Partial<HierarchyNode> }
-> {
+export const useAttachSite = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }) => apiPatch<HierarchyNode>(ENDPOINTS.hierarchyNode(id), patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["hierarchy"] }),
-  });
-}
-
-export function useDeleteNode(): UseMutationResult<void, Error, string> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id) => apiDelete<void>(ENDPOINTS.hierarchyNode(id)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["hierarchy"] }),
-  });
-}
-
-// ===========================================================
-// Files
-// ===========================================================
-export const useFiles = (
-  filters?: Record<string, unknown>,
-): UseQueryResult<FileObject[]> =>
-  useQuery({
-    queryKey: ["files", filters],
-    queryFn: () => apiGet<FileObject[]>(ENDPOINTS.files, filters),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export interface FileDetail extends FileObject {
-  extractions?: ExtractedField[];
-  signedUrl?: string;
-}
-
-export const useFile = (id: string | null): UseQueryResult<FileDetail> =>
-  useQuery({
-    queryKey: ["file", id],
-    queryFn: () => apiGet<FileDetail>(ENDPOINTS.file(id!)),
-    enabled: !!id,
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export interface UploadFileInput {
-  file: File;
-  scopeNodeId?: string;
-  docType?: string;
-  onProgress?: (pct: number) => void;
-}
-
-export function useUploadFile(): UseMutationResult<FileObject, Error, UploadFileInput> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ file, scopeNodeId, docType, onProgress }) =>
-      apiUpload<FileObject>(
-        ENDPOINTS.fileUpload,
-        file,
-        { scopeNodeId, docType },
-        onProgress,
-      ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["files"] }),
-  });
-}
-
-export function useReprocessFile(): UseMutationResult<FileObject, Error, string> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id) => apiPost<FileObject>(ENDPOINTS.fileReprocess(id)),
-    onSuccess: (_d, id) => {
-      qc.invalidateQueries({ queryKey: ["file", id] });
-      qc.invalidateQueries({ queryKey: ["files"] });
+    mutationFn: ({ id, siteId }: { id: string; siteId: string }) =>
+      apiPatch<Evidence>(ENDPOINTS.evidenceAttachSite(id), { siteId }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["evidence"] });
+      qc.invalidateQueries({ queryKey: ["evidence", v.id] });
     },
   });
+};
+
+// ─── Extraction promotion (Confirm & Save) ─────────────────────────────
+
+export const useSuggestedKpis = (schemaCode: string | null) =>
+  useQuery<{ schemaCode: string; kpiCodes: string[] }>({
+    queryKey: ["extraction-suggested-kpis", schemaCode],
+    queryFn: () => apiGet(ENDPOINTS.extractionSuggest, { params: { schema: schemaCode } }),
+    enabled: !!schemaCode,
+  });
+
+export interface ConfirmDataPointPayload {
+  kpiCode: string;
+  payload: unknown;
+  confidence?: number;
 }
 
-// ===========================================================
-// Extraction (HITL queue)
-// ===========================================================
-export const useExtractionQueue = (
-  filters?: Record<string, unknown>,
-): UseQueryResult<ExtractedField[]> =>
-  useQuery({
-    queryKey: ["extraction-queue", filters],
-    queryFn: () => apiGet<ExtractedField[]>(ENDPOINTS.extractionQueue, filters),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-// Back-compat alias.
-export const useReviewQueue = useExtractionQueue;
-
-export const useExtractionStats = (): UseQueryResult<ExtractionStats> =>
-  useQuery({
-    queryKey: ["extraction-stats"],
-    queryFn: () => apiGet<ExtractionStats>(ENDPOINTS.extractionStats),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useExtractedFields = (fileId?: string): UseQueryResult<ExtractedField[]> =>
-  useQuery({
-    queryKey: ["extraction", fileId ?? "all"],
-    queryFn: () =>
-      fileId
-        ? apiGet<ExtractedField[]>(ENDPOINTS.fileExtraction(fileId))
-        : apiGet<ExtractedField[]>(ENDPOINTS.extractionQueue),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export function useApproveField(): UseMutationResult<
-  ExtractedField,
-  Error,
-  { id: string; value?: string | number; notes?: string }
-> {
+export const useConfirmExtraction = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input) =>
-      apiPost<ExtractedField>(ENDPOINTS.extractionFieldApprove(input.id), {
-        value: input.value,
-        notes: input.notes,
+    mutationFn: (params: {
+      evidenceId: string;
+      siteId: string;
+      periodStart: string;
+      periodEnd: string;
+      dataPoints: ConfirmDataPointPayload[];
+    }) =>
+      apiPost(ENDPOINTS.extractionConfirm(params.evidenceId), {
+        siteId: params.siteId,
+        periodStart: params.periodStart,
+        periodEnd: params.periodEnd,
+        dataPoints: params.dataPoints,
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["extraction-queue"] });
-      qc.invalidateQueries({ queryKey: ["extraction-stats"] });
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["evidence"] });
+      qc.invalidateQueries({ queryKey: ["evidence", v.evidenceId] });
+      qc.invalidateQueries({ queryKey: ["data-points"] });
     },
   });
-}
+};
 
-export function useRejectField(): UseMutationResult<
-  ExtractedField,
-  Error,
-  { id: string; reason: string }
-> {
+export const useHoldEvidence = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input) =>
-      apiPost<ExtractedField>(ENDPOINTS.extractionFieldReject(input.id), {
-        reason: input.reason,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["extraction-queue"] });
-      qc.invalidateQueries({ queryKey: ["extraction-stats"] });
-    },
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiPost(ENDPOINTS.extractionHold(id), { reason }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["evidence"] }),
   });
-}
+};
 
-export function useEditField(): UseMutationResult<
-  ExtractedField,
-  Error,
-  { id: string; value: string | number; notes?: string }
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) =>
-      apiPatch<ExtractedField>(ENDPOINTS.extractionField(input.id), {
-        value: input.value,
-        notes: input.notes,
-      }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["extraction-queue"] }),
-  });
-}
+// ─── Data Points ───────────────────────────────────────────────────────
 
-// ===========================================================
-// Metrics
-// ===========================================================
-export const useMetricRegistry = (): UseQueryResult<MetricDefinition[]> =>
-  useQuery({
-    queryKey: ["metric-registry"],
-    queryFn: () => apiGet<MetricDefinition[]>(ENDPOINTS.metricRegistry),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
+export const useDataPoints = (params?: { siteId?: string; topic?: string; kpi?: string; fy?: string }) =>
+  useQuery<DataPoint[]>({
+    queryKey: ["data-points", params],
+    queryFn: () => apiGet(ENDPOINTS.dataPoints, { params }),
   });
 
-export const useMetricEvents = (
-  filters?: Record<string, unknown>,
-): UseQueryResult<MetricEvent[]> =>
-  useQuery({
-    queryKey: ["metric-events", filters],
-    queryFn: () => apiGet<MetricEvent[]>(ENDPOINTS.metricEvents, filters),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export function useSubmitMetric(): UseMutationResult<
-  MetricEvent,
-  Error,
-  { id: string; payload?: Record<string, unknown> }
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }) =>
-      apiPost<MetricEvent>(ENDPOINTS.metricEventSubmit(id), payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["metric-events"] }),
-  });
-}
-
-export function useApproveMetric(): UseMutationResult<MetricEvent, Error, string> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id) => apiPost<MetricEvent>(ENDPOINTS.metricEventApprove(id)),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["metric-events"] }),
-  });
-}
-
-// ===========================================================
-// Calculations
-// ===========================================================
-export const useCalculations = (): UseQueryResult<CalculationRun[]> =>
-  useQuery({
-    queryKey: ["calculations"],
-    queryFn: () => apiGet<CalculationRun[]>(ENDPOINTS.calculations),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useCalculation = (id: string | null): UseQueryResult<CalculationRun> =>
-  useQuery({
-    queryKey: ["calculation", id],
-    queryFn: () => apiGet<CalculationRun>(ENDPOINTS.calculationRun(id!)),
+export const useDataPoint = (id: string | null) =>
+  useQuery<DataPoint>({
+    queryKey: ["data-point", id],
+    queryFn: () => apiGet(ENDPOINTS.dataPointDetail(id!)),
     enabled: !!id,
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
   });
 
-export function useRunCalculation(): UseMutationResult<
-  CalculationRun,
-  Error,
-  Record<string, unknown>
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) => apiPost<CalculationRun>(ENDPOINTS.calculationsRun, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["calculations"] }),
-  });
+export interface Lineage {
+  dataPoint: DataPoint;
+  evidence: Evidence | null;
+  extraction: ExtractionResult | null;
+  auditTrail: AuditTrailEntry[];
 }
 
-// ===========================================================
-// Frameworks / BRSR
-// ===========================================================
-export const useFrameworks = (): UseQueryResult<Framework[]> =>
-  useQuery({
-    queryKey: ["frameworks"],
-    queryFn: () => apiGet<Framework[]>(ENDPOINTS.frameworks),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useBrsrSections = (): UseQueryResult<BRSRSection[]> =>
-  useQuery({
-    queryKey: ["brsr-sections"],
-    queryFn: () => apiGet<BRSRSection[]>(ENDPOINTS.brsrSections),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-// ===========================================================
-// Carbon
-// ===========================================================
-export const useEmissionsOverview = (): UseQueryResult<EmissionsOverview> =>
-  useQuery({
-    queryKey: ["emissions-overview"],
-    queryFn: () => apiGet<EmissionsOverview>(ENDPOINTS.emissionsOverview),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useCarbonEmissions = useEmissionsOverview;
-
-export const useScope3 = (): UseQueryResult<Scope3Category[]> =>
-  useQuery({
-    queryKey: ["scope3"],
-    queryFn: () => apiGet<Scope3Category[]>(ENDPOINTS.scope3),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useNetZero = (): UseQueryResult<
-  NetZeroTarget & { pathway: { year: number; target: number; actual?: number; bau?: number }[] }
-> =>
-  useQuery({
-    queryKey: ["net-zero"],
-    queryFn: () =>
-      apiGet<
-        NetZeroTarget & {
-          pathway: { year: number; target: number; actual?: number; bau?: number }[];
-        }
-      >(ENDPOINTS.netZero),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useMacc = (): UseQueryResult<AbatementProject[]> =>
-  useQuery({
-    queryKey: ["macc"],
-    queryFn: () => apiGet<AbatementProject[]>(ENDPOINTS.macc),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useAbatement = (): UseQueryResult<AbatementProject[]> =>
-  useQuery({
-    queryKey: ["abatement"],
-    queryFn: () => apiGet<AbatementProject[]>(ENDPOINTS.abatement),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useCarbonCredits = (): UseQueryResult<unknown[]> =>
-  useQuery({
-    queryKey: ["carbon-credits"],
-    queryFn: () => apiGet<unknown[]>(ENDPOINTS.carbonCredits),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-// ===========================================================
-// Reports
-// ===========================================================
-export const useReports = (): UseQueryResult<Report[]> =>
-  useQuery({
-    queryKey: ["reports"],
-    queryFn: () => apiGet<Report[]>(ENDPOINTS.reports),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useReport = (id: string | null): UseQueryResult<Report> =>
-  useQuery({
-    queryKey: ["report", id],
-    queryFn: () => apiGet<Report>(ENDPOINTS.report(id!)),
+export const useDataPointLineage = (id: string | null) =>
+  useQuery<Lineage>({
+    queryKey: ["data-point-lineage", id],
+    queryFn: () => apiGet(ENDPOINTS.dataPointLineage(id!)),
     enabled: !!id,
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
   });
 
-export function useGenerateReport(): UseMutationResult<
-  { id: string; status: string },
-  Error,
-  { frameworks: string[]; fy: string; scopeNodeId: string; formats: string[] }
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) =>
-      apiPost<{ id: string; status: string }>(ENDPOINTS.reportGenerate, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["reports"] }),
-  });
-}
+// ─── Ontology ──────────────────────────────────────────────────────────
 
-// ===========================================================
-// Suppliers
-// ===========================================================
-export const useSuppliers = (): UseQueryResult<Supplier[]> =>
-  useQuery({
-    queryKey: ["suppliers"],
-    queryFn: () => apiGet<Supplier[]>(ENDPOINTS.suppliers),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
+export const useTopics = () =>
+  useQuery({ queryKey: ["topics"], queryFn: () => apiGet<Array<{ id: string; code: string; title: string; pillar: "E" | "S" | "G"; sortKey: number }>>(ENDPOINTS.topics) });
+
+export const useKpis = (topicCode?: string) =>
+  useQuery<Kpi[]>({
+    queryKey: ["kpis", topicCode],
+    queryFn: () => apiGet(ENDPOINTS.kpis, { params: { topic: topicCode } }),
   });
 
-export const useSupplier = (id: string | null): UseQueryResult<Supplier> =>
-  useQuery({
-    queryKey: ["supplier", id],
-    queryFn: () => apiGet<Supplier>(ENDPOINTS.supplier(id!)),
-    enabled: !!id,
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
+export const useKpiByCode = (code: string | null) =>
+  useQuery<Kpi>({
+    queryKey: ["kpi-code", code],
+    queryFn: () => apiGet(ENDPOINTS.kpiByCode(code!)),
+    enabled: !!code,
   });
-
-export function useInviteSupplier(): UseMutationResult<
-  Supplier,
-  Error,
-  { id: string; email?: string; message?: string }
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...rest }) => apiPost<Supplier>(ENDPOINTS.supplierInvite(id), rest),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["suppliers"] }),
-  });
-}
-
-// ===========================================================
-// Materiality
-// ===========================================================
-export const useMaterialTopics = (): UseQueryResult<MaterialTopic[]> =>
-  useQuery({
-    queryKey: ["materiality-topics"],
-    queryFn: () => apiGet<MaterialTopic[]>(ENDPOINTS.materialityTopics),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useMateriality = (): UseQueryResult<{
-  topics: MaterialTopic[];
-  stakeholders: Stakeholder[];
-}> =>
-  // Backend exposes `/materiality/topics` and `/materiality/stakeholders` as
-  // separate resources — there is no `/materiality` index. Fetch both in
-  // parallel and assemble the shape the page expects.
-  useQuery({
-    queryKey: ["materiality"],
-    queryFn: async () => {
-      const [topics, stakeholders] = await Promise.all([
-        apiGet<MaterialTopic[]>(ENDPOINTS.materialityTopics).catch(() => []),
-        apiGet<Stakeholder[]>("/materiality/stakeholders").catch(() => []),
-      ]);
-      return {
-        topics: Array.isArray(topics) ? topics : [],
-        stakeholders: Array.isArray(stakeholders) ? stakeholders : [],
-      };
-    },
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-// ===========================================================
-// Assurance
-// ===========================================================
-export const useSnapshots = (): UseQueryResult<AssuranceSnapshot[]> =>
-  useQuery({
-    queryKey: ["snapshots"],
-    queryFn: () => apiGet<AssuranceSnapshot[]>(ENDPOINTS.snapshots),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useExceptions = (): UseQueryResult<AssuranceException[]> =>
-  useQuery({
-    queryKey: ["exceptions"],
-    queryFn: () => apiGet<AssuranceException[]>(ENDPOINTS.exceptions),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-// ===========================================================
-// Audit
-// ===========================================================
-export const useAuditLog = (
-  filters?: Record<string, unknown>,
-): UseQueryResult<AuditEvent[]> =>
-  useQuery({
-    queryKey: ["audit-log", filters],
-    queryFn: () => apiGet<AuditEvent[]>(ENDPOINTS.auditLog, filters),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-// ===========================================================
-// Copilot
-// ===========================================================
-export const useCopilotConversations = (): UseQueryResult<CopilotConversation[]> =>
-  useQuery({
-    queryKey: ["copilot-conversations"],
-    queryFn: () => apiGet<CopilotConversation[]>(ENDPOINTS.copilotConversations),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export function useAskCopilot(): UseMutationResult<
-  { conversationId: string; messageId: string },
-  Error,
-  { conversationId?: string; prompt: string; mode?: string }
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ conversationId, ...body }) =>
-      apiPost<{ conversationId: string; messageId: string }>(
-        conversationId
-          ? ENDPOINTS.copilotMessages(conversationId)
-          : ENDPOINTS.copilotConversations,
-        body,
-      ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["copilot-conversations"] }),
-  });
-}
-
-// ===========================================================
-// Dashboard
-// ===========================================================
-export interface DashboardKpis {
-  emissions: { value: number; deltaPct?: number };
-  intensity: { value: number; deltaPct?: number };
-  brsrCompletion: number;
-  griCompletion: number;
-  evidenceLineage: number;
-  [key: string]: unknown;
-}
-
-export const useDashboardKpis = (): UseQueryResult<DashboardKpis> =>
-  useQuery({
-    queryKey: ["dashboard-kpis"],
-    queryFn: () => apiGet<DashboardKpis>(ENDPOINTS.dashboardKpis),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useDashboardActivity = (): UseQueryResult<unknown> =>
-  useQuery({
-    queryKey: ["dashboard-activity"],
-    queryFn: () => apiGet<unknown>(ENDPOINTS.dashboardActivity),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-export const useDashboardAnomalies = (): UseQueryResult<unknown> =>
-  useQuery({
-    queryKey: ["dashboard-anomalies"],
-    queryFn: () => apiGet<unknown>(ENDPOINTS.dashboardAnomalies),
-    staleTime: DEFAULT_STALE_MS,
-    retry: DEFAULT_RETRY,
-  });
-
-// Re-export for callers that import them from the queries module.
-export { apiGet, apiPost, apiPatch, apiPut, apiDelete, apiUpload } from "../client";
-export { ENDPOINTS } from "../endpoints";

@@ -1,8 +1,0 @@
-{
-  "doc_type": "FUEL_INVOICE",
-  "fields": {
-    "diesel_l": 13200,
-    "period_start": "2024-04-01",
-    "period_end": "2024-04-30"
-  }
-}

@@ -85,9 +85,9 @@ async function bootstrap(): Promise<void> {
 
   // Swagger
   const swagger = new DocumentBuilder()
-    .setTitle('BRSR AI Platform v2 — API')
+    .setTitle('THE ESG — API')
     .setDescription(
-      'Enterprise multi-tenant ESG / BRSR reporting API. ' +
+      'THE ESG: AI Native Sustainability Operating System. ' +
         'All endpoints (except @Public()) require a Keycloak-issued bearer JWT.',
     )
     .setVersion('2.0')
@@ -106,7 +106,7 @@ async function bootstrap(): Promise<void> {
   await app.listen(port, '0.0.0.0');
 
   const logger = app.get(Logger);
-  logger.log(`BRSR API listening on :${port}`);
+  logger.log(`THE ESG API listening on :${port}`);
   logger.log(`Swagger UI -> http://localhost:${port}/api/docs`);
 }
 

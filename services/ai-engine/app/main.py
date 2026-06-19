@@ -1,265 +1,144 @@
-"""FastAPI application entry point.
-
-Wires up:
-  * structlog
-  * OpenTelemetry instrumentation
-  * Langfuse callback handler (registered globally for LangChain)
-  * CORS (locked-down — comma-separated list from CORS_ALLOW_ORIGINS)
-  * Lifespan: open Redis + Qdrant clients
-  * Routers (extract, validate, feedback)
-  * ``/health`` endpoint — liveness + readiness checks (Redis, Qdrant,
-    OpenAI key); optional remote OpenAI ping on ``/ready``.
-  * Global exception handler so no stack trace ever leaks to clients.
+"""THE ESG — AI engine
+Receives /extract requests from the backend, downloads the file from a
+presigned URL, runs text extraction + classify + LLM structured extraction,
+posts results back to the backend callback URL.
 """
 from __future__ import annotations
-
 import asyncio
-from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+import logging
+import time
+from typing import Optional
 
-from fastapi import FastAPI, Request
+import httpx
+from fastapi import BackgroundTasks, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
-from app.config import get_settings
-from app.utils.logging import configure_logging, get_logger, hash_tenant, redact_pii
+from .config import get_settings
+from .text import text_from_bytes
+from .classifier import classify
+from .llm import extract_structured
+from .schemas import SCHEMA_CODE_FOR_DOC_TYPE
 
-configure_logging()
-logger = get_logger("main")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("ai-engine")
+
+settings = get_settings()
+app = FastAPI(title="THE ESG — AI engine", version="1.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    settings = get_settings()
-    logger.info("startup", env=settings.ENV, service=settings.SERVICE_NAME, port=settings.PORT)
+# ── Request / response shapes ─────────────────────────────────────────────
 
-    # Register Langfuse handler globally with LangChain if creds set.
-    if settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY:
+class ExtractRequest(BaseModel):
+    file_id: str = Field(..., description="Backend Evidence id")
+    s3_url: str = Field(..., description="Presigned GET URL")
+    tenant_id: str
+    doc_type_hint: Optional[str] = None             # ELECTRICITY_BILL etc.
+    callback_url: Optional[str] = None
+    callback_secret_header: str = "x-internal-secret"
+    mime_type: Optional[str] = None
+    original_name: Optional[str] = None
+
+
+class ExtractAck(BaseModel):
+    ok: bool = True
+    file_id: str
+    queued: bool = True
+
+
+# ── Health ────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "service": "ai-engine", "model": settings.OPENAI_MODEL}
+
+
+# ── /extract ──────────────────────────────────────────────────────────────
+
+@app.post("/extract", response_model=ExtractAck)
+async def extract(req: ExtractRequest, background: BackgroundTasks):
+    background.add_task(_run_pipeline, req)
+    return ExtractAck(file_id=req.file_id, queued=True)
+
+
+async def _run_pipeline(req: ExtractRequest) -> None:
+    t0 = time.time()
+    log = logger.getChild(req.file_id[:8])
+    try:
+        # 1. download
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.get(req.s3_url)
+            r.raise_for_status()
+            data = r.content
+        size = len(data)
+        log.info("downloaded %d bytes", size)
+
+        # 2. text
+        text, ocr = text_from_bytes(data, req.mime_type or "", req.original_name or "")
+        log.info("text_len=%d ocr=%s", len(text), ocr)
+
+        # 3. classify
+        doc_type, classify_conf = classify(text, req.doc_type_hint)
+        schema_code = SCHEMA_CODE_FOR_DOC_TYPE.get(doc_type, "UNKNOWN_V1")
+        log.info("doc_type=%s conf=%.2f", doc_type, classify_conf)
+
+        # 4. LLM structured extraction
+        payload, extract_conf = extract_structured(text, doc_type)
+        log.info("extract_conf=%.2f", extract_conf)
+
+        # 5. callback
+        await _deliver_callback(req, schema_code, payload, extract_conf, text[:1500], doc_type)
+        log.info("pipeline complete in %dms", int((time.time() - t0) * 1000))
+    except Exception as e:
+        log.exception("pipeline failed: %s", e)
+        # Best-effort error callback
         try:
-            from langfuse.callback import CallbackHandler  # type: ignore[import-not-found]
-
-            handler = CallbackHandler(
-                public_key=settings.LANGFUSE_PUBLIC_KEY,
-                secret_key=settings.LANGFUSE_SECRET_KEY,
-                host=settings.LANGFUSE_HOST,
+            await _deliver_callback(
+                req, "UNKNOWN_V1", {}, 0.0, "", "UNKNOWN", error=str(e)[:300]
             )
-            app.state.langfuse_handler = handler
-            logger.info("langfuse.registered")
-        except Exception as e:  # pragma: no cover
-            logger.warning("langfuse.init_failed", err=str(e))
-            app.state.langfuse_handler = None
-    else:
-        app.state.langfuse_handler = None
-
-    # Open Redis client.
-    try:
-        from redis.asyncio import Redis
-
-        app.state.redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
-    except Exception as e:  # pragma: no cover
-        logger.warning("redis.init_failed", err=str(e))
-        app.state.redis = None
-
-    # Open Qdrant client.
-    try:
-        from qdrant_client import AsyncQdrantClient
-
-        app.state.qdrant = AsyncQdrantClient(
-            url=settings.QDRANT_URL,
-            api_key=settings.QDRANT_API_KEY or None,
-        )
-    except Exception as e:  # pragma: no cover
-        logger.warning("qdrant.init_failed", err=str(e))
-        app.state.qdrant = None
-
-    yield
-
-    # Cleanup.
-    if app.state.redis is not None:
-        try:
-            await app.state.redis.aclose()
-        except Exception:  # pragma: no cover
-            pass
-    if app.state.qdrant is not None:
-        try:
-            await app.state.qdrant.close()
-        except Exception:  # pragma: no cover
+        except Exception:
             pass
 
 
-def _parse_origins(raw: str) -> list[str]:
-    """Comma-separated origins; ``*`` allowed in dev only."""
-    parts = [p.strip() for p in (raw or "").split(",") if p.strip()]
-    return parts or ["*"]
+async def _deliver_callback(
+    req: ExtractRequest,
+    schema_code: str,
+    payload: dict,
+    confidence: float,
+    raw_text: str,
+    doc_type_detected: str,
+    error: Optional[str] = None,
+) -> None:
+    if not req.callback_url:
+        return
+    body = {
+        "documentId": req.file_id,
+        "tenantId":   req.tenant_id,
+        "schemaCode": schema_code,
+        "payload":    payload,
+        "confidence": confidence,
+        "rawText":    raw_text,
+        "docTypeDetected": doc_type_detected,
+        "error":      error,
+    }
+    headers = {"content-type": "application/json"}
+    if settings.BACKEND_CALLBACK_SECRET:
+        headers[req.callback_secret_header] = settings.BACKEND_CALLBACK_SECRET
 
-
-def create_app() -> FastAPI:
-    settings = get_settings()
-
-    app = FastAPI(
-        title="BRSR AI Engine",
-        version="2.0.0",
-        description="AI extraction engine for BRSR v2.",
-        lifespan=lifespan,
-    )
-
-    origins = _parse_origins(settings.CORS_ALLOW_ORIGINS)
-    # Production refuses wildcard + credentials simultaneously — fail loud
-    # if a deployment misconfigures it.
-    if settings.ENV != "dev" and "*" in origins:
-        logger.warning(
-            "cors.wildcard_in_non_dev",
-            env=settings.ENV,
-            note="CORS_ALLOW_ORIGINS contains '*' outside dev — locking down",
-        )
-        # In non-dev we refuse the wildcard entirely.
-        origins = [o for o in origins if o != "*"] or ["https://invalid.local"]
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins,
-        allow_credentials=settings.ENV == "dev",
-        allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-AI-Engine-Version"],
-    )
-
-    # OpenTelemetry instrumentation.
-    try:
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
-        FastAPIInstrumentor.instrument_app(app)
-    except Exception as e:  # pragma: no cover
-        logger.warning("otel.init_failed", err=str(e))
-
-    # ------------------------------------------------------------------
-    # Global exception handler — guarantees no stack trace leaks out of
-    # FastAPI. Returns a generic 500 with a correlation id so on-call can
-    # find the failure in logs.
-    # ------------------------------------------------------------------
-    @app.exception_handler(Exception)
-    async def _unhandled(_req: Request, exc: Exception) -> JSONResponse:  # noqa: ARG001
-        import uuid
-
-        cid = uuid.uuid4().hex[:12]
-        logger.exception(
-            "request.unhandled",
-            correlation_id=cid,
-            err=redact_pii(str(exc)),
-        )
-        return JSONResponse(
-            {"error": "internal_error", "correlation_id": cid},
-            status_code=500,
-        )
-
-    # Routers.
-    from app.router import extract as extract_router
-    from app.router import feedback as feedback_router
-    from app.router import validate as validate_router
-
-    app.include_router(extract_router.router)
-    app.include_router(validate_router.router)
-    app.include_router(feedback_router.router)
-
-    @app.get("/health")
-    async def health() -> JSONResponse:
-        """Liveness — pings Qdrant + Redis and verifies OPENAI_API_KEY is set.
-
-        Does NOT hit OpenAI's network endpoints (that's the ``/ready`` job)
-        so this stays fast enough for k8s liveness probes.
-        """
-        checks: dict[str, Any] = {"service": settings.SERVICE_NAME, "ok": True}
-
-        # Redis
-        try:
-            if app.state.redis is not None:
-                await asyncio.wait_for(app.state.redis.ping(), timeout=1.5)
-                checks["redis"] = "ok"
-            else:
-                checks["redis"] = "uninitialised"
-        except Exception as e:
-            checks["redis"] = f"err: {redact_pii(str(e))}"
-            checks["ok"] = False
-
-        # Qdrant
-        try:
-            if app.state.qdrant is not None:
-                await asyncio.wait_for(app.state.qdrant.get_collections(), timeout=2.0)
-                checks["qdrant"] = "ok"
-            else:
-                checks["qdrant"] = "uninitialised"
-        except Exception as e:
-            checks["qdrant"] = f"err: {redact_pii(str(e))}"
-            checks["ok"] = False
-
-        # OpenAI — config-only check. We just confirm a key is set and that
-        # the AsyncOpenAI client can be constructed. Network calls live on
-        # the /ready endpoint to keep this probe cheap.
-        if not settings.OPENAI_API_KEY:
-            checks["openai"] = "missing_key"
-            checks["ok"] = False
-        else:
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for attempt in range(3):
             try:
-                from openai import AsyncOpenAI
-
-                _ = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-                checks["openai"] = "ok"
-                checks["openai_model_extractor"] = settings.OPENAI_MODEL_EXTRACTOR
-                checks["openai_model_classifier"] = settings.OPENAI_MODEL_CLASSIFIER
+                resp = await client.post(req.callback_url, json=body, headers=headers)
+                if resp.status_code < 300:
+                    return
+                logger.warning("callback non-2xx attempt=%d status=%d", attempt, resp.status_code)
             except Exception as e:
-                checks["openai"] = f"err: {redact_pii(str(e))}"
-                checks["ok"] = False
-
-        status = 200 if checks["ok"] else 503
-        return JSONResponse(checks, status_code=status)
-
-    @app.get("/ready")
-    async def ready() -> JSONResponse:
-        """Readiness — also pings OpenAI's ``/models`` endpoint.
-
-        Confirms the configured key actually works against the upstream so
-        a freshly-rotated or revoked key is caught by the orchestrator
-        before traffic hits ``/extract``.
-        """
-        checks: dict[str, Any] = {"service": settings.SERVICE_NAME, "ok": True}
-        if not settings.OPENAI_API_KEY:
-            checks["openai"] = "missing_key"
-            checks["ok"] = False
-            return JSONResponse(checks, status_code=503)
-        try:
-            from openai import AsyncOpenAI
-
-            client_kwargs: dict[str, Any] = {
-                "api_key": settings.OPENAI_API_KEY,
-                "timeout": 5.0,
-                "max_retries": 0,
-            }
-            if settings.OPENAI_BASE_URL:
-                client_kwargs["base_url"] = settings.OPENAI_BASE_URL
-            if settings.OPENAI_ORG_ID:
-                client_kwargs["organization"] = settings.OPENAI_ORG_ID
-            if settings.OPENAI_PROJECT_ID:
-                client_kwargs["project"] = settings.OPENAI_PROJECT_ID
-            client = AsyncOpenAI(**client_kwargs)
-            # ``models.list`` is a cheap auth-checking call.
-            page = await asyncio.wait_for(client.models.list(), timeout=5.0)
-            count = 0
-            try:
-                count = sum(1 for _ in page.data)
-            except Exception:  # pragma: no cover
-                count = -1
-            checks["openai"] = "ok"
-            checks["openai_models_visible"] = count
-        except Exception as e:
-            checks["openai"] = f"err: {redact_pii(str(e))}"
-            checks["ok"] = False
-        status = 200 if checks["ok"] else 503
-        return JSONResponse(checks, status_code=status)
-
-    @app.get("/")
-    async def root() -> dict[str, str]:
-        return {"service": "ai-engine", "version": "2.0.0"}
-
-    return app
-
-
-app = create_app()
+                logger.warning("callback exception attempt=%d err=%s", attempt, e)
+            await asyncio.sleep(2 * (attempt + 1))
+    logger.error("callback failed after 3 attempts file=%s", req.file_id)

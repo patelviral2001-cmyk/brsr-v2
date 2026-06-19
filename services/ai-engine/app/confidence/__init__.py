@@ -1,5 +1,0 @@
-"""Confidence scoring."""
-
-from app.confidence.scorer import ConfidenceScorer
-
-__all__ = ["ConfidenceScorer"]
