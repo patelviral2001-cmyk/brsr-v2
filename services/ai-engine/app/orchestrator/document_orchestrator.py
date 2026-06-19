@@ -219,6 +219,14 @@ def to_backend_callback_payload(
         "fields": backend_fields,
         "documentConfidence": round(document_confidence, 4),
         "needsReview": bool(needs_review),
+        # Surface classifier output + OCR flag so the backend can keep its
+        # Document row metadata in sync. Without this, a doc the user
+        # uploaded as OTHER stays OTHER even after the classifier
+        # confidently re-types it as UTILITY_BILL, and a scan PDF whose
+        # Layer 2 hit the OCR fallback still shows ocrApplied=false.
+        "docType": response.doc_type_detected or None,
+        "docTypeConfidence": round(float(response.doc_type_confidence or 0.0), 4),
+        "ocrApplied": bool(getattr(response, "ocr_applied", False)),
     }
 
 

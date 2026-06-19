@@ -181,6 +181,11 @@ class PipelineOrchestrator:
             pages = [await self.layer2.detect_from_text(text)]
         text_for_classifier = "\n".join(p.text for p in pages)[:4000]
         layer_latencies["layer2"] = int((time.perf_counter() - l2_t0) * 1000)
+        # Mark whether OCR was used on any page so the backend can persist
+        # Document.ocrApplied. Native pdfplumber pages set is_native=True;
+        # the Layer 2 OCR fallback (PyMuPDF + Tesseract) emits is_native=False.
+        if pages and any(getattr(p, "is_native", True) is False for p in pages):
+            response.ocr_applied = True
 
         # ----------------- Layer 1 -------------------------------------
         l1_t0 = time.perf_counter()

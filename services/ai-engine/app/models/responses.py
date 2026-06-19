@@ -108,6 +108,10 @@ class ExtractResponse(BaseModel):
     latency_ms: int = 0
     errors: list[ExtractError] = Field(default_factory=list)
     extracted_at: Optional[str] = None  # ISO timestamp
+    # True iff Layer 2 fell back to OCR rasterisation (PyMuPDF + Tesseract)
+    # because pdfplumber returned essentially no text. Used so the backend
+    # can persist Document.ocrApplied for telemetry / review-UI badges.
+    ocr_applied: bool = False
 
 
 class ValidationIssue(BaseModel):

@@ -112,4 +112,25 @@ export class ExtractionCallbackDto {
   @IsOptional()
   @IsBoolean()
   needsReview?: boolean;
+
+  // Surfaced by the AI engine after Layer 1 classification so the backend
+  // can update Document.docType when the classifier is more confident than
+  // the user's upload-time hint.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  docType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  docTypeConfidence?: number;
+
+  // True iff Layer 2 fell back to OCR (PyMuPDF + Tesseract) because the
+  // PDF had no native text layer. Persisted as Document.ocrApplied so the
+  // review UI can show an "OCR'd from scan" badge.
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  ocrApplied?: boolean;
 }

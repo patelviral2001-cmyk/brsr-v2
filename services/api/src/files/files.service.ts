@@ -505,15 +505,32 @@ export class FilesService {
         });
       }
       const composite = dto.documentConfidence ?? avg(dto.fields.map((f) => f.confidence));
+      // Build the partial update so we only touch columns whose new value
+      // we actually have. docType/ocrApplied arrived in the callback after
+      // Module 6 — older AI-engine images that don't send them must not
+      // erase the existing row state.
+      const data: Record<string, unknown> = {
+        status:
+          composite < 0.85 || dto.needsReview
+            ? 'REVIEW_NEEDED'
+            : 'EXTRACTED',
+        classifierConfidence: composite,
+      };
+      if (dto.docType) {
+        const docType = normalizeDocType(dto.docType);
+        // Only overwrite when the classifier returned a non-OTHER guess —
+        // an OTHER reading is the engine saying "I don't know", which
+        // shouldn't clobber a user-chosen docType from upload time.
+        if (docType !== 'OTHER') {
+          data.docType = docType;
+        }
+      }
+      if (typeof dto.ocrApplied === 'boolean') {
+        data.ocrApplied = dto.ocrApplied;
+      }
       await (tx as any).document.update({
         where: { id: dto.documentId },
-        data: {
-          status:
-            composite < 0.85 || dto.needsReview
-              ? 'REVIEW_NEEDED'
-              : 'EXTRACTED',
-          classifierConfidence: composite,
-        },
+        data,
       });
     });
 
