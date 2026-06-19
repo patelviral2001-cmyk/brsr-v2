@@ -90,7 +90,7 @@ export function ErrorFallback({
             Try again
           </button>
           <a
-            href={`mailto:support@brsr.ai?subject=${subject}&body=${body}`}
+            href={`mailto:support@theesg.in?subject=${subject}&body=${body}`}
             className="inline-flex items-center rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
           >
             Report issue

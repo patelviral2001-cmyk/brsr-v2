@@ -38,9 +38,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly config: ConfigService,
   ) {
     const cfg = this.config;
-    const kcUrl = cfg?.get<string>('KEYCLOAK_URL') ?? 'http://localhost:8080';
-    const kcRealm = cfg?.get<string>('KEYCLOAK_REALM') ?? 'brsr';
-    this.issuer = cfg?.get<string>('JWT_ISSUER') ?? `${kcUrl}/realms/${kcRealm}`;
+    this.issuer = cfg?.get<string>('JWT_ISSUER') ?? 'theesg-api';
     this.audience = cfg?.get<string>('JWT_AUDIENCE') ?? undefined;
     try {
       this.jwks = jwksClient({
@@ -83,8 +81,7 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const realmRoles = claims.realm_access?.roles ?? [];
-    const clientId = this.config.get<string>('KEYCLOAK_CLIENT_ID') ?? 'brsr-api';
-    const clientRoles = claims.resource_access?.[clientId]?.roles ?? [];
+    const clientRoles = claims.resource_access?.['theesg-api']?.roles ?? [];
     const roles = [...new Set([...realmRoles, ...clientRoles])];
     const scopes = (claims.scope ?? '').split(' ').filter(Boolean);
 
@@ -114,7 +111,7 @@ export class JwtAuthGuard implements CanActivate {
       try {
         const decoded = jwt.verify(token, sharedSecret, {
           algorithms: ['HS256'],
-          issuer: 'brsr-api',
+          issuer: 'theesg-api',
           ignoreExpiration: false,
         }) as KeycloakClaims;
         return decoded;

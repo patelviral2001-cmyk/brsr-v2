@@ -44,13 +44,13 @@ export class OpaClient {
   }
 
   /**
-   * Evaluates the `data.brsr.allow` policy. The expected Rego shape is:
-   *   package brsr
+   * Evaluates the `data.theesg.allow` policy. The expected Rego shape is:
+   *   package theesg
    *   default allow := false
    *   default reason := ""
    *   allow { ... }
    *
-   * We post to /v1/data/brsr and unwrap `result.allow` + `result.reason`.
+   * We post to /v1/data/theesg and unwrap `result.allow` + `result.reason`.
    */
   /** Exposed so AbacGuard can decide to apply its RBAC fallback. */
   isEnabled(): boolean {
@@ -67,7 +67,7 @@ export class OpaClient {
     }
 
     try {
-      const url = `${this.baseUrl}/v1/data/brsr`;
+      const url = `${this.baseUrl}/v1/data/theesg`;
       const res = await firstValueFrom(
         this.http.post<{ result?: { allow?: boolean; reason?: string; obligations?: Record<string, unknown> } }>(
           url,

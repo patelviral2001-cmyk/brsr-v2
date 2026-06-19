@@ -147,7 +147,7 @@ export class IamService {
         tenant_id: user.tenantId,
       },
       secret,
-      { expiresIn: ACCESS_TOKEN_TTL, issuer: 'brsr-api' },
+      { expiresIn: ACCESS_TOKEN_TTL, issuer: 'theesg-api' },
     );
 
     // Issue a refresh token bound to a family id. Family tracks the chain of
@@ -158,7 +158,7 @@ export class IamService {
     const refreshToken = jwt.sign(
       { sub: user.id, type: 'refresh', jti, fam: familyId },
       secret,
-      { expiresIn: REFRESH_TOKEN_TTL, issuer: 'brsr-api' },
+      { expiresIn: REFRESH_TOKEN_TTL, issuer: 'theesg-api' },
     );
 
     await (this.prisma as any).user.update({
@@ -206,7 +206,7 @@ export class IamService {
     const secret = this.getJwtSecret();
     let decoded: any;
     try {
-      decoded = jwt.verify(presentedRefresh, secret, { issuer: 'brsr-api' });
+      decoded = jwt.verify(presentedRefresh, secret, { issuer: 'theesg-api' });
     } catch {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -245,12 +245,12 @@ export class IamService {
     const accessToken = jwt.sign(
       { sub: user.id, email: user.email, tenant_id: user.tenantId },
       secret,
-      { expiresIn: ACCESS_TOKEN_TTL, issuer: 'brsr-api' },
+      { expiresIn: ACCESS_TOKEN_TTL, issuer: 'theesg-api' },
     );
     const newRefresh = jwt.sign(
       { sub: user.id, type: 'refresh', jti: newJti, fam: decoded.fam },
       secret,
-      { expiresIn: REFRESH_TOKEN_TTL, issuer: 'brsr-api' },
+      { expiresIn: REFRESH_TOKEN_TTL, issuer: 'theesg-api' },
     );
 
     return { token: accessToken, refreshToken: newRefresh };
@@ -296,7 +296,7 @@ export class IamService {
   async logout(refreshTokenOpt?: string): Promise<{ ok: true }> {
     if (!refreshTokenOpt) return { ok: true };
     try {
-      const decoded = jwt.verify(refreshTokenOpt, this.getJwtSecret(), { issuer: 'brsr-api' }) as any;
+      const decoded = jwt.verify(refreshTokenOpt, this.getJwtSecret(), { issuer: 'theesg-api' }) as any;
       if (decoded?.fam) revokedFamilies.add(decoded.fam);
     } catch {
       // Even if the token is malformed, logout should be idempotent.

@@ -1,7 +1,7 @@
 import { Decimal } from 'decimal.js';
 
 /**
- * Safe CEL-subset evaluator for BRSR calculation formulas.
+ * Safe CEL-subset evaluator for KPI calculation formulas.
  *
  * Supports:
  *   - literals: integers, decimals, strings, true/false, null

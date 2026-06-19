@@ -1,7 +1,7 @@
 {
-  "name": "@brsr/api",
+  "name": "@theesg/api",
   "version": "2.0.0",
-  "description": "BRSR AI Platform v2 - NestJS API Gateway",
+  "description": "THE ESG — NestJS API",
   "private": true,
   "type": "commonjs",
   "scripts": {

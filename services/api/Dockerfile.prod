@@ -42,7 +42,7 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   echo ">>> Migrations complete."
 fi
 
-echo ">>> Starting BRSR API on :${PORT:-4000}"
+echo ">>> Starting THE ESG API on :${PORT:-4000}"
 exec npx ts-node --transpile-only -r tsconfig-paths/register src/main.ts
 EOF
 RUN chmod +x /app/entrypoint.sh

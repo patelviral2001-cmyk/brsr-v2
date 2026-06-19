@@ -17,7 +17,7 @@ export class EmailClient {
 
   async send(args: { to: string; subject: string; html: string; text?: string }): Promise<void> {
     const token = this.config.get<string>('POSTMARK_TOKEN');
-    const from = this.config.get<string>('EMAIL_FROM') ?? 'no-reply@brsr.example.com';
+    const from = this.config.get<string>('EMAIL_FROM') ?? 'no-reply@theesg.in';
 
     if (!token || token === 'changeme') {
       this.logger.log(`[email-stub] to=${args.to} subject="${args.subject}"`);

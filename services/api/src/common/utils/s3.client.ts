@@ -27,10 +27,10 @@ export class S3Storage {
   }
 
   bucketEvidence(): string {
-    return this.config.get<string>('S3_BUCKET_EVIDENCE') ?? this.config.get<string>('S3_BUCKET') ?? 'brsr-evidence';
+    return this.config.get<string>('S3_BUCKET_EVIDENCE') ?? this.config.get<string>('S3_BUCKET') ?? 'theesg-evidence';
   }
   bucketReports(): string {
-    return this.config.get<string>('S3_BUCKET_REPORTS') ?? this.config.get<string>('S3_BUCKET') ?? 'brsr-reports';
+    return this.config.get<string>('S3_BUCKET_REPORTS') ?? this.config.get<string>('S3_BUCKET') ?? 'theesg-reports';
   }
 
   async put(args: {

@@ -13,7 +13,7 @@ export function initTracing(): void {
   if (process.env.NODE_ENV === 'test') return;
 
   sdk = new NodeSDK({
-    serviceName: process.env.OTEL_SERVICE_NAME || 'brsr-api',
+    serviceName: process.env.OTEL_SERVICE_NAME || 'theesg-api',
     traceExporter: new OTLPTraceExporter({
       url: `${process.env.OTEL_EXPORTER_OTLP_ENDPOINT || 'http://localhost:4318'}/v1/traces`,
     }),

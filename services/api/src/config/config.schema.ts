@@ -6,12 +6,9 @@ type Env = Record<string, string | undefined>;
 const required = [
   'DATABASE_URL',
   'REDIS_URL',
-  'KEYCLOAK_URL',
-  'KEYCLOAK_REALM',
-  'KEYCLOAK_CLIENT_ID',
   'AI_ENGINE_URL',
-  'COPILOT_URL',
-  'OPA_URL',
+  'JWT_SECRET',
+  'OPENAI_API_KEY',
 ];
 
 export function configValidationSchema(env: Env): Env {
