@@ -117,7 +117,13 @@ class Layer2Layout:
     async def detect_from_pdf(
         self, data: bytes, *, max_pages: int = 50
     ) -> list[LayoutPage]:
-        """Native PDF layout via pdfplumber. Returns one page per PDF page."""
+        """Native PDF layout via pdfplumber. Returns one page per PDF page.
+
+        For scan-only PDFs (no embedded text layer — common for utility bills
+        printed and rescanned), pdfplumber returns 0 chars per page. We
+        rasterize the page via PyMuPDF and OCR it with pytesseract so the
+        downstream pipeline still gets real text.
+        """
         try:
             import pdfplumber  # type: ignore
         except Exception:  # noqa: BLE001
@@ -130,7 +136,83 @@ class Layer2Layout:
                     pages.append(self._page_from_pdfplumber(page, page_no=i))
         except Exception as e:  # noqa: BLE001
             logger.warning("layer2.pdf_failed", err=str(e))
+
+        # If any page came out empty (scan-only PDF), OCR-rasterize ALL pages.
+        # Threshold: 25 chars/page average is the noise floor below which we
+        # treat the PDF as scanned.
+        total_chars = sum(len(p.text or "") for p in pages)
+        avg = total_chars / max(1, len(pages))
+        if pages and avg < 25:
+            ocr_pages = await self._ocr_rasterize_pdf(data, max_pages=max_pages)
+            if ocr_pages:
+                logger.info(
+                    "layer2.pdf_ocr_fallback",
+                    native_chars=total_chars,
+                    ocr_pages=len(ocr_pages),
+                )
+                return ocr_pages
         return pages
+
+    async def _ocr_rasterize_pdf(
+        self, data: bytes, *, max_pages: int, dpi: int = 300
+    ) -> list[LayoutPage]:
+        """Rasterize each page via PyMuPDF, OCR with pytesseract."""
+        try:
+            import fitz  # type: ignore  (PyMuPDF)
+            from PIL import Image  # type: ignore
+            import pytesseract  # type: ignore
+        except Exception as e:  # noqa: BLE001
+            logger.warning("layer2.ocr_deps_missing", err=str(e))
+            return []
+        out: list[LayoutPage] = []
+        try:
+            doc = fitz.open(stream=data, filetype="pdf")
+        except Exception as e:  # noqa: BLE001
+            logger.warning("layer2.ocr_open_failed", err=str(e))
+            return []
+        try:
+            zoom = dpi / 72.0
+            mat = fitz.Matrix(zoom, zoom)
+            # PyMuPDF Document doesn't support slice indexing; use range().
+            page_count = min(doc.page_count, max_pages)
+            for idx in range(page_count):
+                page = doc.load_page(idx)
+                i = idx + 1
+                try:
+                    pix = page.get_pixmap(matrix=mat, alpha=False)
+                    img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+                    # PSM 6 = "Assume a single uniform block of text". Works
+                    # well for invoices/bills where the document is one big
+                    # block rather than columns. OEM 1 = LSTM only (more
+                    # accurate than the legacy Tesseract engine).
+                    tess_config = "--oem 1 --psm 6"
+                    data_dict = pytesseract.image_to_data(
+                        img,
+                        output_type=pytesseract.Output.DICT,
+                        config=tess_config,
+                    )
+                    blocks = _ocr_words_to_blocks(data_dict, page_no=i)
+                    out.append(
+                        LayoutPage(
+                            page_no=i,
+                            width=float(pix.width),
+                            height=float(pix.height),
+                            blocks=blocks,
+                            is_native=False,
+                        )
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "layer2.ocr_page_failed", page=i, err=str(e)
+                    )
+                    out.append(
+                        LayoutPage(
+                            page_no=i, width=0, height=0, is_native=False
+                        )
+                    )
+        finally:
+            doc.close()
+        return out
 
     async def detect_from_image(self, data: bytes, *, page_no: int = 1) -> LayoutPage:
         """OCR layout via pytesseract."""

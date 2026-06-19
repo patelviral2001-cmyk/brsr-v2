@@ -398,10 +398,15 @@ class DocumentOrchestrator:
                 )
                 return layered_resp
             except Exception as e:  # noqa: BLE001 - fall back to legacy path on any failure
+                # Include exception class name so the failure mode is visible
+                # when the exception was raised with no message string (e.g.
+                # `raise StopIteration()`), which would otherwise log err="".
                 logger.warning(
                     "orchestrator.layered_failed_falling_back",
                     err=redact_pii(str(e)),
+                    err_type=type(e).__name__,
                     file=req.file_id,
+                    exc_info=True,
                 )
 
         budget = DocBudget(
