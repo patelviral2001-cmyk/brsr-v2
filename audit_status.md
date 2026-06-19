@@ -14,7 +14,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 6. Extraction ✓ CLOSED
 - [x] 7. Evidence ✓ CLOSED
 - [x] 8. Metrics ✓ CLOSED
-- [ ] 9. Calculations
+- [x] 9. Calculations ✓ CLOSED
 - [ ] 10. Disclosures
 - [ ] 11. Dashboard
 - [ ] 12. API Layer
@@ -28,11 +28,40 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 8
+Working: 9
 Broken: 0
 Missing: 1
-Fixed: 14
-Pending: 9
+Fixed: 15
+Pending: 8
+
+---
+
+## MODULE 9 — CALCULATIONS  ✓ CLOSED
+
+**Verified (positive):**
+- `POST /calculations/scope2` with `purchased_electricity_kwh=80 kWh` (APPROVED) over Aug-2025 → 201; `calc_run.output_value = 0.057280 tCO2e` (= 80 × 0.000716 India CEA factor); `formula_version_id = builtin:scope2_location_from_electricity`; `duration_ms = 27`.
+- Calc emits a `metric_event` (id `cmqkv2ccf002tug5ttir3umzz`) with `source_type=CALCULATION`, `source_calc_run_id` linked, `status=APPROVED` — lineage doc → extraction → metric → calc → metric preserved.
+- DRAFT metric_events are **not** picked up by the calc (verified: had to submit + approve the Module 7-promoted row before scope2 read it).
+- `POST /calculations/scope2` with `periodStart>periodEnd` → 400 `periodStart must be <= periodEnd`.
+- `POST /calculations/scope2` with bogus `scopeNodeIds` → 400 `One or more scopeNodeIds do not belong to this tenant`.
+- `POST /calculations/scope2` over a period with no metric_events → 201, `calc_run.output_value = 0`, `formula_version_id = none`, no metric_event emitted (clean empty result).
+- Unit-consistency check in code: if two metric_events for the same canonical_key have different units, the processor throws — verified in code at `calculation.processor.ts:120-123`.
+- 50 emission_factor rows seeded (DIESEL=2.6878 kgCO2e/L, PURCHASED_ELECTRICITY range 0.71–0.85 kgCO2e/kWh, etc.).
+- `GET /calculations/runs?take=5` returns runs scoped to the caller's tenant in `computedAt desc` order.
+
+**Issues found:**
+1. **🔴 `POST /calculations/scope1` returned `output_value=0`, `formula_version_id=none`** even with a LOCKED `stationary_combustion_diesel_kg=999 kg` event in scope. Root cause: `framework_mapping` has 0 rows with `canonicalKeys` containing `ghg_scope1_total` or `ghg_scope1_stationary`. The processor had a built-in fallback only for Scope 2.
+
+**Fixed:**
+1. Added `builtin:scope1_stationary_from_diesel_kg` formula in `services/api/src/calculations/calculation.processor.ts`. Factor derivation: DEFRA 2.6878 kgCO2e/L × diesel density (0.832 kg/L → ~1.2019 L/kg) = 3.231e-3 tCO2e/kg.
+
+**Re-verified after fix:**
+- Same Scope 1 POST → `calc_run` row `cmqkvgouz0003708xg0n59vng`: `output_value = 3.227769 tCO2e` (= 999 × 0.003231 exact), `output_unit = tCO2e`, `formula_version_id = builtin:scope1_stationary_from_diesel_kg`, `input_metric_ids = {stationary_combustion_diesel_kg}`.
+- Emitted metric_event: `ghg_scope1_stationary = 3.227769 tCO2e`, `source_type=CALCULATION`, `status=APPROVED`.
+
+**Notes:**
+- Scope 3 endpoints (`POST /calculations/scope3/:category`) exist but have no formulas in either `framework_mapping` or built-in code. Deferred to **Module 10 — Disclosures** which is where the scope 3 category-by-category mapping naturally lives.
+- The `calc_run.input_metric_ids` column stores canonical *keys* (text), not row IDs, despite the column name. Pre-existing, not changed in this audit. Add to a future schema-tidy pass.
 
 ---
 
