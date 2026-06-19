@@ -21,6 +21,17 @@ export interface AuditLogInput {
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
 
+  // Per-request dedup table — prevents the AuditInterceptor and the
+  // controller-handler's explicit audit.log() call from BOTH writing
+  // rows for the same logical event. Keys live for 60 s before TTL
+  // eviction. Without this, every mutating endpoint produced two
+  // audit_log rows (one from the @Audit decorator → AuditInterceptor,
+  // one from the service body's audit.log() with the richer before/
+  // after diff). 242 audit rows during the audit reflected ~125 real
+  // events doubled at the write layer.
+  private readonly recentKeys = new Map<string, number>();
+  private static readonly DEDUPE_TTL_MS = 60_000;
+
   constructor(private readonly prisma: PrismaService) {}
 
   async log(input: AuditLogInput): Promise<void> {
@@ -33,6 +44,19 @@ export class AuditService {
         'SIGN', 'EXTRACT', 'OVERRIDE',
       ]);
       const action = validActions.has(actionEnum) ? actionEnum : 'UPDATE';
+
+      // Dedup against the same (requestId, tenantId, entity, entityId,
+      // action) tuple within the TTL window. If a row was already
+      // written for this request (e.g. by the service-body call), the
+      // interceptor's later call short-circuits. Requests without a
+      // requestId (background jobs, internal callbacks) are not
+      // deduped — those are not driven by @Audit + service pairs.
+      const key = `${input.requestId ?? ''}|${input.tenantId ?? ''}|${input.entity}|${input.entityId ?? ''}|${action}`;
+      this.purgeExpiredKeys();
+      if (input.requestId) {
+        if (this.recentKeys.has(key)) return;
+        this.recentKeys.set(key, Date.now() + AuditService.DEDUPE_TTL_MS);
+      }
 
       await (this.prisma as any).auditLog.create({
         data: {
@@ -54,6 +78,13 @@ export class AuditService {
     } catch (e) {
       // Audit logging is best-effort — never block the user request.
       this.logger.warn(`Audit log skipped: ${(e as Error).message}`);
+    }
+  }
+
+  private purgeExpiredKeys(): void {
+    const now = Date.now();
+    for (const [k, exp] of this.recentKeys) {
+      if (exp < now) this.recentKeys.delete(k);
     }
   }
 
