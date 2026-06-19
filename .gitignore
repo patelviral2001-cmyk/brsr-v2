@@ -98,3 +98,8 @@ qa-ui-test/*.json
 qa-ui-test/*.csv
 qa-ui-test/*.pdf
 services/ai-engine/tests/benchmark/fixtures-rc/
+
+# ---- AI engine test fixtures + outputs (intentionally not tracked) ----
+services/ai-engine/tests/benchmark/fixtures/
+services/ai-engine/tests/benchmark/benchmark_results.json
+services/ai-engine/qa_*.py
