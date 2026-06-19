@@ -8,15 +8,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { KeycloakClient } from '../common/utils/keycloak-client';
 import { AuditTrailService } from '../audit-trail/audit-trail.service';
-import { ExchangeCodeDto } from './dto/auth.dto';
 import { InviteUserDto, UpdateUserDto } from './dto/users.dto';
 import { AssignRoleDto, CreateRoleDto } from './dto/roles.dto';
 
@@ -45,8 +41,6 @@ export class IamService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly kc: KeycloakClient,
-    private readonly http: HttpService,
     private readonly config: ConfigService,
     private readonly audit: AuditTrailService,
   ) {}
@@ -67,74 +61,6 @@ export class IamService {
       return secret ?? 'dev-secret-change-me-min-32-characters-long!!';
     }
     return secret;
-  }
-
-  /**
-   * Exchanges a Keycloak authorization code for an access token, decodes
-   * the access token, and ensures a local User row exists (JIT provisioning).
-   */
-  async exchangeCode(dto: ExchangeCodeDto, ip?: string, userAgent?: string) {
-    const tokenUrl = `${this.config.get<string>('KEYCLOAK_URL')}/realms/${this.config.get<string>('KEYCLOAK_REALM')}/protocol/openid-connect/token`;
-    const params = new URLSearchParams();
-    params.set('grant_type', 'authorization_code');
-    params.set('code', dto.code);
-    params.set('client_id', this.config.get<string>('KEYCLOAK_CLIENT_ID') ?? 'brsr-api');
-    const secret = this.config.get<string>('KEYCLOAK_CLIENT_SECRET');
-    if (secret) params.set('client_secret', secret);
-    if (dto.redirectUri) params.set('redirect_uri', dto.redirectUri);
-    if (dto.codeVerifier) params.set('code_verifier', dto.codeVerifier);
-
-    const res = await firstValueFrom(
-      this.http.post<{ access_token: string; refresh_token: string; expires_in: number; id_token?: string }>(
-        tokenUrl,
-        params.toString(),
-        { headers: { 'content-type': 'application/x-www-form-urlencoded' } },
-      ),
-    );
-    const tokens = res.data;
-    const decoded = jwt.decode(tokens.access_token) as Record<string, unknown> | null;
-    if (!decoded) throw new BadRequestException('Could not decode access token');
-
-    const tenantId = decoded.tenant_id as string | undefined;
-    const sub = decoded.sub as string;
-    const email = (decoded.email as string) ?? (decoded.preferred_username as string) ?? '';
-
-    if (!tenantId) {
-      throw new BadRequestException('Token missing tenant_id claim — user is not assigned to a tenant');
-    }
-
-    // JIT-provision local user. Schema fields: idpSubject (@unique), email,
-    // firstName, lastName, isActive, lastLoginAt. There is no keycloakSub,
-    // displayName, or 'active' column.
-    const fullName = (decoded.name as string) ?? email;
-    const parts = fullName.split(' ');
-    const user = await (this.prisma as any).user.upsert({
-      where: { idpSubject: sub },
-      update: { email, lastLoginAt: new Date() },
-      create: {
-        idpSubject: sub,
-        email,
-        firstName: parts[0] ?? null,
-        lastName: parts.length > 1 ? parts.slice(1).join(' ') : null,
-        tenantId,
-        isActive: true,
-      },
-    });
-
-    await this.audit.log({
-      tenantId,
-      userId: user.id,
-      entity: 'User',
-      entityId: user.id,
-      action: 'LOGIN',
-      ip,
-      userAgent,
-    });
-
-    return {
-      tokens,
-      user: { id: user.id, email: user.email, tenantId: user.tenantId },
-    };
   }
 
   /**
@@ -426,31 +352,9 @@ export class IamService {
   }
 
   async inviteUser(tenantId: string, dto: InviteUserDto, actorId: string) {
-    let kcId: string;
-    try {
-      const existing = await this.kc.lookupByEmail(dto.email);
-      if (existing) {
-        kcId = existing.id;
-      } else {
-        const kcUser = await this.kc.provisionUser({
-          email: dto.email,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          tenantId,
-          roles: dto.roles,
-        });
-        kcId = kcUser.id;
-      }
-      if (dto.sendInvite !== false) {
-        await this.kc.sendEmailVerification(kcId, this.config.get<string>('PUBLIC_BASE_URL') ?? 'http://localhost:3000');
-      }
-    } catch (e) {
-      // Keycloak may be unavailable when OPA_ENABLED=false; fall back to a
-      // synthetic idpSubject so users can be invited and assigned roles
-      // locally even without an IdP.
-      this.logger.warn(`Keycloak provision skipped: ${(e as Error).message}`);
-      kcId = `local:${dto.email}`;
-    }
+    // Phase 0+1 uses local credentials only; idpSubject namespace prefixed `local:`
+    // so a future external IdP can claim subjects without colliding.
+    const kcId = `local:${dto.email}`;
     // Schema: User has unique (tenantId, email) and unique idpSubject.
     // Upsert keyed on idpSubject so re-invites are idempotent.
     const user = await (this.prisma as any).user.upsert({
@@ -511,13 +415,6 @@ export class IamService {
     const existing = await (this.prisma as any).user.findFirst({ where: { id, tenantId } });
     if (!existing) throw new NotFoundException('User not found');
     await (this.prisma as any).user.update({ where: { id }, data: { isActive: false } });
-    if (existing.idpSubject && !String(existing.idpSubject).startsWith('local:')) {
-      try {
-        await this.kc.deactivate(existing.idpSubject);
-      } catch (e) {
-        this.logger.warn(`Keycloak deactivate failed for ${existing.idpSubject}: ${(e as Error).message}`);
-      }
-    }
     await this.audit.log({
       tenantId,
       userId: actorId,

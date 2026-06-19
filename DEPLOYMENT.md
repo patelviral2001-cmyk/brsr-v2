@@ -148,7 +148,7 @@ What it does:
 
 1. Validates `.env` has all required vars.
 2. `docker compose build` for api / ai-engine / web.
-3. Starts postgres, redis, qdrant, minio; waits for `healthy`.
+3. Starts postgres, redis, minio; waits for `healthy`.
 4. Runs `minio-init` to create buckets (`brsr-evidence` with object-lock,
    `brsr-reports`, `brsr-uploads`, `brsr-extracts`, `brsr-backups`).
 5. Runs `prisma migrate deploy`.
@@ -266,11 +266,12 @@ Migration checklist to AWS (or equivalent):
    `pg_dump` in MinIO. Update `DATABASE_URL`.
 2. **Managed Redis**: AWS ElastiCache. Update `REDIS_URL`.
 3. **Object store**: AWS S3 — `mc mirror local/brsr-evidence s3/brsr-evidence-prod`. Point `S3_ENDPOINT` to the real S3 URL.
-4. **Vector store**: Qdrant Cloud or self-host Qdrant on EKS.
-5. **Compute**: containerise the same images into EKS (manifests live in `infra/k8s/`).
-6. **Edge**: CloudFront in front of an ALB. Keep Caddy or move to an ALB
+4. **Compute**: containerise the same images and run them behind a managed
+   load balancer (ECS, Fly Machines, Render, etc.). The Docker Compose images
+   are unchanged.
+5. **Edge**: CloudFront in front of an ALB. Keep Caddy or move to an ALB
    listener with ACM cert.
-7. **Backups**: switch to RDS automated backups + S3 lifecycle policies.
+6. **Backups**: switch to RDS automated backups + S3 lifecycle policies.
 
 The Docker images and `.env` shape do not need to change — only the URL
 endpoints in `.env`.

@@ -1,25 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsString, IsOptional, MaxLength, MinLength } from 'class-validator';
 
-export class ExchangeCodeDto {
-  @ApiProperty({ description: 'Authorization code from Keycloak OIDC redirect' })
-  @IsString()
-  @MaxLength(2048)
-  code!: string;
-
-  @ApiProperty({ description: 'Redirect URI used to obtain the code', required: false })
-  @IsOptional()
-  @IsString()
-  @MaxLength(2048)
-  redirectUri?: string;
-
-  @ApiProperty({ required: false, description: 'PKCE code verifier' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(512)
-  codeVerifier?: string;
-}
-
 export class LoginDto {
   @ApiProperty()
   @IsEmail()

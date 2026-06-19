@@ -33,15 +33,7 @@
     "useDefineForClassFields": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "baseUrl": ".",
-    "paths": {
-      "@brsr/contracts": ["packages/contracts/src/index.ts"],
-      "@brsr/contracts/*": ["packages/contracts/src/*"],
-      "@brsr/shared": ["packages/shared/src/index.ts"],
-      "@brsr/shared/*": ["packages/shared/src/*"],
-      "@brsr/ui": ["packages/ui/src/index.ts"],
-      "@brsr/ui/*": ["packages/ui/src/*"]
-    }
+    "baseUrl": "."
   },
   "exclude": ["node_modules", "dist", ".next", ".turbo", "build", "coverage"]
 }

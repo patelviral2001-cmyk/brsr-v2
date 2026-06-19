@@ -1,6 +1,0 @@
-apiVersion: v2
-name: brsr-copilot
-description: BRSR AI Platform - Copilot agent service
-type: application
-version: 0.1.0
-appVersion: "0.1.0"

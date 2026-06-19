@@ -64,8 +64,8 @@ else
 fi
 
 # --- 4. Start infrastructure tier -----------------------------------
-log "Starting infrastructure: postgres, redis, qdrant, minio"
-$COMPOSE up -d postgres redis qdrant minio
+log "Starting infrastructure: postgres, redis, minio"
+$COMPOSE up -d postgres redis minio
 
 log "Waiting for infrastructure healthy..."
 for svc in postgres redis minio; do

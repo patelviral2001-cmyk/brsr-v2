@@ -1,9 +1,0 @@
-apiVersion: v2
-name: brsr-ai-engine
-description: BRSR AI Platform - FastAPI + LangGraph extraction/agent engine
-type: application
-version: 0.1.0
-appVersion: "0.1.0"
-maintainers:
-  - name: BRSR Platform Team
-    email: platform-ops@brsrai.com

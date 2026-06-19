@@ -1,7 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { OpaClient } from './utils/opa-client';
-import { KeycloakClient } from './utils/keycloak-client';
 import { S3Storage } from './utils/s3.client';
 import { MagicLinkSigner } from './utils/magic-link';
 import { EmailClient } from './utils/email.client';
@@ -11,16 +10,11 @@ import { RolesGuard } from './guards/roles.guard';
 import { TenantScopeGuard } from './guards/tenant-scope.guard';
 import { InternalCallbackGuard } from './guards/internal-callback.guard';
 
-/**
- * Cross-cutting providers used across all feature modules. Made @Global so
- * we don't have to re-import in every module.
- */
 @Global()
 @Module({
   imports: [HttpModule],
   providers: [
     OpaClient,
-    KeycloakClient,
     S3Storage,
     MagicLinkSigner,
     EmailClient,
@@ -32,7 +26,6 @@ import { InternalCallbackGuard } from './guards/internal-callback.guard';
   ],
   exports: [
     OpaClient,
-    KeycloakClient,
     S3Storage,
     MagicLinkSigner,
     EmailClient,

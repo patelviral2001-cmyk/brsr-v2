@@ -2,8 +2,6 @@ import { Test } from '@nestjs/testing';
 import { IamService } from './iam.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { KeycloakClient } from '../common/utils/keycloak-client';
 import { AuditTrailService } from '../audit-trail/audit-trail.service';
 
 describe('IamService', () => {
@@ -15,8 +13,6 @@ describe('IamService', () => {
         IamService,
         { provide: PrismaService, useValue: { user: { findUnique: jest.fn().mockResolvedValue({ id: 'u1' }) } } },
         { provide: ConfigService, useValue: { get: jest.fn() } },
-        { provide: HttpService, useValue: {} },
-        { provide: KeycloakClient, useValue: {} },
         { provide: AuditTrailService, useValue: { log: jest.fn() } },
       ],
     }).compile();

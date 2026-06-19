@@ -3,7 +3,7 @@
 # Target: Single Hostinger KVM 4 VPS (16GB RAM, 4 vCPU, Ubuntu 24.04)
 #
 # Bring-up order (managed by ./scripts/deploy.sh):
-#   1. postgres + redis + qdrant + minio   (infrastructure)
+#   1. postgres + redis + minio             (infrastructure)
 #   2. minio-init                           (bucket bootstrap, one-shot)
 #   3. api migrations                       (one-shot)
 #   4. api + ai-engine + web + caddy        (application tier)
@@ -21,7 +21,6 @@ networks:
 volumes:
   pgdata:
   redisdata:
-  qdrantdata:
   miniodata:
   caddydata:
   caddyconfig:
@@ -97,27 +96,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
-    networks:
-      - brsr
-
-  # ----------------------------------------------------------------
-  # Qdrant — vector DB for RAG / semantic search
-  # ----------------------------------------------------------------
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: brsr-qdrant
-    restart: unless-stopped
-    volumes:
-      - qdrantdata:/qdrant/storage
-    environment:
-      QDRANT__SERVICE__HTTP_PORT: 6333
-      QDRANT__LOG_LEVEL: INFO
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333' 2>/dev/null || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
     networks:
       - brsr
 
@@ -232,13 +210,6 @@ services:
       BACKEND_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN}
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-false}
-      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://localhost:8080}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-brsr}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-brsr-api}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-stub}
-      COPILOT_URL: ${COPILOT_URL:-http://localhost:8101}
-      OPA_URL: ${OPA_URL:-http://localhost:8181}
-      OPA_ENABLED: ${OPA_ENABLED:-false}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
     volumes:
       - ./data/uploads:/app/data/uploads
@@ -254,7 +225,7 @@ services:
       - brsr
 
   # ----------------------------------------------------------------
-  # AI Engine — Python FastAPI (extraction + RAG + OpenAI)
+  # AI Engine — Python FastAPI (OpenAI structured-output extraction)
   # ----------------------------------------------------------------
   ai-engine:
     build:
@@ -265,15 +236,12 @@ services:
     restart: unless-stopped
     mem_limit: 4g
     depends_on:
-      qdrant:
-        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
       PORT: 8100
       LOG_LEVEL: info
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      QDRANT_URL: http://qdrant:6333
       REDIS_URL: ${REDIS_URL}
       BACKEND_URL: http://api:4000
       BACKEND_CALLBACK_SECRET: ${BACKEND_CALLBACK_SECRET}
@@ -284,9 +252,6 @@ services:
       S3_FORCE_PATH_STYLE: "true"
       S3_BUCKET_EVIDENCE: brsr-evidence
       S3_BUCKET_EXTRACTS: brsr-extracts
-      # Route extraction through the 6-layer pipeline so the DISCOM rule
-      # extractor short-circuits the LLM on utility bills.
-      USE_LAYERED_PIPELINE: "true"
     expose:
       - "8100"
     healthcheck:

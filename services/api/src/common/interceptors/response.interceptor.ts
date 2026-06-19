@@ -9,7 +9,7 @@ export interface ApiEnvelope<T> {
   requestId: string | null;
 }
 
-const RAW_PATH_PREFIXES = ['/api/v1/reports/', '/api/v1/files/upload', '/api/v1/copilot/conversations'];
+const RAW_PATH_PREFIXES = ['/api/v1/reports/', '/api/v1/evidence/', '/api/v1/files/upload'];
 
 /**
  * Wraps responses in a standard envelope `{ data, meta, traceId, requestId }`.

@@ -15,7 +15,7 @@ import { Throttle } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { IamService } from './iam.service';
-import { ExchangeCodeDto, LoginDto, LogoutDto, RefreshDto } from './dto/auth.dto';
+import { LoginDto, LogoutDto, RefreshDto } from './dto/auth.dto';
 import { InviteUserDto, UpdateUserDto } from './dto/users.dto';
 import { AssignRoleDto, CreateRoleDto } from './dto/roles.dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -33,13 +33,6 @@ import { Audit } from '../common/decorators/audit.decorator';
 @Controller('iam')
 export class IamController {
   constructor(private readonly iam: IamService) {}
-
-  @Public()
-  @Post('auth/exchange')
-  @ApiOperation({ summary: 'Exchange Keycloak code for tokens (also JIT-provisions local User)' })
-  exchange(@Body() dto: ExchangeCodeDto, @Req() req: Request) {
-    return this.iam.exchangeCode(dto, req.ip, req.headers['user-agent']);
-  }
 
   // Brute-force protection: limit credential logins to 5 per IP per 5 minutes.
   // This sits ON TOP of the per-user account-lockout enforced in iam.service.

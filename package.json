@@ -1,8 +1,8 @@
 {
-  "name": "brsr-platform",
-  "version": "2.0.0",
+  "name": "theesg-platform",
+  "version": "1.0.0",
   "private": true,
-  "description": "BRSR AI Platform v2 — enterprise multi-tenant ESG, sustainability and BRSR reporting platform.",
+  "description": "THE ESG — AI Native Sustainability Operating System. Converts evidence into audit-ready BRSR/GRI/CDP disclosures.",
   "packageManager": "pnpm@9.12.3",
   "engines": {
     "node": ">=20.11.0",
@@ -10,8 +10,7 @@
   },
   "workspaces": [
     "apps/*",
-    "services/*",
-    "packages/*"
+    "services/*"
   ],
   "scripts": {
     "dev": "turbo run dev --parallel",
@@ -19,17 +18,14 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "test:e2e": "turbo run test:e2e",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
     "clean": "turbo run clean && rimraf node_modules .turbo",
     "db:generate": "pnpm --filter @brsr/api prisma:generate",
-    "db:migrate": "pnpm --filter @brsr/api prisma:migrate",
+    "db:push": "pnpm --filter @brsr/api exec prisma db push",
     "db:seed": "pnpm --filter @brsr/api prisma:seed",
     "db:reset": "pnpm --filter @brsr/api prisma:reset",
-    "docker:dev:up": "docker compose -f infra/docker-compose.dev.yml up -d",
-    "docker:dev:down": "docker compose -f infra/docker-compose.dev.yml down",
-    "docker:dev:logs": "docker compose -f infra/docker-compose.dev.yml logs -f",
+    "deploy": "./scripts/deploy.sh",
     "prepare": "husky install || true"
   },
   "devDependencies": {

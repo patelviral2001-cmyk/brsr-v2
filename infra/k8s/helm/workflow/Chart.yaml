@@ -1,6 +1,0 @@
-apiVersion: v2
-name: brsr-workflow
-description: BRSR AI Platform - Temporal worker + Bull MQ runner
-type: application
-version: 0.1.0
-appVersion: "0.1.0"

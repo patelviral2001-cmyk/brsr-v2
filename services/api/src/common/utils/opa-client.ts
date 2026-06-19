@@ -38,7 +38,9 @@ export class OpaClient {
     private readonly config: ConfigService,
   ) {
     this.baseUrl = this.config.get<string>('OPA_URL') ?? 'http://localhost:8181';
-    this.enabled = this.config.get<string>('OPA_ENABLED', 'true') !== 'false';
+    // Default OFF — Phase 0+1 uses RBAC via @RequirePermissions decorators.
+    // Set OPA_ENABLED=true to route authorization through an external Rego policy engine.
+    this.enabled = this.config.get<string>('OPA_ENABLED', 'false') === 'true';
   }
 
   /**
