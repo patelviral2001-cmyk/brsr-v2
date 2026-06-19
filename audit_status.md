@@ -18,7 +18,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 10. Disclosures ✓ CLOSED
 - [x] 11. Dashboard ✓ CLOSED
 - [x] 12. API Layer ✓ CLOSED
-- [ ] 13. Frontend Pages
+- [x] 13. Frontend Pages ✓ CLOSED
 - [ ] 14. Multi Tenant
 - [ ] 15. Audit Trail
 - [ ] 16. Background Jobs
@@ -28,11 +28,33 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 12
+Working: 13
 Broken: 0
 Missing: 1
-Fixed: 20
-Pending: 5
+Fixed: 21
+Pending: 4
+
+---
+
+## MODULE 13 — FRONTEND PAGES  ✓ CLOSED
+
+**Verified (positive):**
+- `/login` page → HTTP 200, valid Next.js HTML shell (16573 bytes, CSS + 3 JS chunks linked).
+- `/` → 307 redirect (NextAuth-style session check) — same for `/dashboard`.
+- Frontend bundle (`/_next/static/chunks/main-app-…`) contains zero references to `minio:9000` — the previously-broken signedUrl path didn't leak into the SPA.
+- `NEXT_PUBLIC_API_URL` resolves to `https://srv1763596.hstgr.cloud/api/v1/v1` (DOMAIN expanded at container boot from .env, verified via `docker compose exec web printenv`).
+- `apps/web/src/lib/api/endpoints.ts` matches the backend controllers — every backend route the audit has touched has a corresponding `ENDPOINTS.*` entry; no path drift.
+- `fileSignedUrl` is referenced in three places: the endpoints map, the type def (`FileDetail.signedUrl?`), and the extraction-preview-pane.
+
+**Issues found:**
+1. **🔴 Extraction preview pane iframe was always blank.** `apps/web/src/components/extraction/extraction-preview-pane.tsx:45` reads `file?.signedUrl` from `useFile(field.fileId)`, but `FilesService.findOne()` returned the raw Document row with no `signedUrl` field. `previewUrl` was permanently undefined, so neither the `<iframe>` (PDF) nor the `<Image>` (PNG/JPG) ever rendered — the reviewer saw an empty preview pane next to the field they were trying to verify.
+
+**Fixed:**
+1. `FilesService.findOne` now eagerly attaches a 5-minute HMAC `/view` URL to the returned doc (same token format as `GET /files/:id/signed-url`, Module 4). Frontend type already had `signedUrl?: string`, so no UI change needed.
+
+**Re-verified after fix:**
+- `GET /files/cmqkrpqa…` → response includes `signedUrl: "https://srv1763596.hstgr.cloud/api/v1/v1/files/cmqkrpqa…/view?access=…"`.
+- Fetching that URL with no auth header → HTTP 200, 537 bytes (matches Module 4's uploaded tiny.pdf size exactly).
 
 ---
 
