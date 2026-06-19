@@ -237,38 +237,94 @@ class Layer4Vision:
 
                 result = discom_extract(joined)
                 if result and result.is_high_confidence:
-                    out: list[ExtractedTextField] = []
-                    for df in result.fields:
-                        # Numeric vs textual: only emit when the canonical
-                        # registry knows this metric_key (avoid pollution).
-                        from app.registry import METRIC_REGISTRY
-
-                        if df.metric_key not in METRIC_REGISTRY:
-                            continue
-                        out.append(
-                            ExtractedTextField(
-                                metric_key=df.metric_key,
-                                value=float(df.value) if isinstance(df.value, (int, float)) else None,
-                                raw_text=df.raw_text,
-                                unit=df.unit,
-                                period_start=result.period_start,
-                                period_end=result.period_end,
-                                source_page=1,
-                                confidence_hint=df.confidence,
-                            )
-                        )
-                    logger.info(
-                        "layer4.rule_extractor_fired",
-                        family="electricity_discom",
-                        discom=result.discom,
-                        confidence=round(result.overall_confidence, 3),
-                        fields=len(out),
-                    )
-                    return out
+                    out = self._fields_from_rule(result, family="electricity_discom",
+                                                  extra={"discom": result.discom})
+                    if out:
+                        return out
             except Exception as e:  # noqa: BLE001
                 logger.warning("layer4.rule_extractor_failed",
                                family="electricity_discom", err=str(e))
+
+        # Water bill specialist.
+        if doc_type in (None, "WATER_BILL", "UTILITY_BILL", "OTHER"):
+            try:
+                from app.extractors.water_bill import extract as water_extract
+
+                result = water_extract(joined)
+                if result and result.is_high_confidence:
+                    out = self._fields_from_rule(result, family="water_bill")
+                    if out:
+                        return out
+            except Exception as e:  # noqa: BLE001
+                logger.warning("layer4.rule_extractor_failed",
+                               family="water_bill", err=str(e))
+
+        # HR headcount specialist.
+        if doc_type in (None, "HR_HEADCOUNT_SHEET", "HR_REGISTER", "PAYROLL", "OTHER"):
+            try:
+                from app.extractors.hr_headcount import extract as hr_extract
+
+                result = hr_extract(joined)
+                if result and result.is_high_confidence:
+                    out = self._fields_from_rule(result, family="hr_headcount")
+                    if out:
+                        return out
+            except Exception as e:  # noqa: BLE001
+                logger.warning("layer4.rule_extractor_failed",
+                               family="hr_headcount", err=str(e))
+
+        # Waste manifest specialist.
+        if doc_type in (None, "WASTE_MANIFEST", "OTHER"):
+            try:
+                from app.extractors.waste_manifest import extract as waste_extract
+
+                result = waste_extract(joined)
+                if result and result.is_high_confidence:
+                    out = self._fields_from_rule(result, family="waste_manifest")
+                    if out:
+                        return out
+            except Exception as e:  # noqa: BLE001
+                logger.warning("layer4.rule_extractor_failed",
+                               family="waste_manifest", err=str(e))
+
         return []
+
+    def _fields_from_rule(
+        self,
+        result: Any,
+        *,
+        family: str,
+        extra: Optional[dict[str, Any]] = None,
+    ) -> list[ExtractedTextField]:
+        """Convert a domain extractor's result into ExtractedTextField list,
+        filtering through the canonical METRIC_REGISTRY so unknown keys never
+        reach the response."""
+        from app.registry import METRIC_REGISTRY
+
+        out: list[ExtractedTextField] = []
+        for df in result.fields:
+            if df.metric_key not in METRIC_REGISTRY:
+                continue
+            out.append(
+                ExtractedTextField(
+                    metric_key=df.metric_key,
+                    value=float(df.value) if isinstance(df.value, (int, float)) else None,
+                    raw_text=df.raw_text,
+                    unit=df.unit,
+                    period_start=result.period_start,
+                    period_end=result.period_end,
+                    source_page=1,
+                    confidence_hint=df.confidence,
+                )
+            )
+        logger.info(
+            "layer4.rule_extractor_fired",
+            family=family,
+            confidence=round(result.overall_confidence, 3),
+            fields=len(out),
+            **(extra or {}),
+        )
+        return out
 
     @staticmethod
     def _rule_coverage_is_complete(
@@ -280,6 +336,10 @@ class Layer4Vision:
         required: dict[str, set[str]] = {
             "UTILITY_BILL":      {"purchased_electricity_kwh"},
             "ELECTRICITY_BILL":  {"purchased_electricity_kwh"},
+            "WATER_BILL":         {"water_withdrawn_total_kl"},
+            "WASTE_MANIFEST":     {"waste_hazardous_kg", "waste_non_hazardous_kg"},
+            "HR_HEADCOUNT_SHEET": {"employee_count_total"},
+            "HR_REGISTER":        {"employee_count_total"},
         }
         needed = required.get(doc_type or "", set())
         return bool(needed) and needed.issubset(covered)

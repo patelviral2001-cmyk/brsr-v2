@@ -5,6 +5,7 @@ import { Decimal } from 'decimal.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import {
+  BrsrFramework,
   GenerateReportDto,
   MappingFilterDto,
   PreviewBrsrDto,
@@ -164,11 +165,16 @@ export class BrsrService {
             value = sorted.reduce((a, c) => a.plus(c.value), new Decimal(0)).toString();
         }
       }
+      // Pick the unit from any of the contributing metric_events. The
+      // resolve loop produces one value per mapping, so taking the first
+      // event's unit is the right thing (all candidates of the same
+      // canonical_key are validated to share a unit at ingest time).
+      const unit = candidates[0]?.unit;
       out.push({
         sectionId: m.frameworkSection ?? m.frameworkCode,
         label: m.frameworkCode,
         value,
-        unit: undefined,
+        unit,
         sourceMetricEventIds: sourceIds,
         calcRunId,
         evidence: { documentIds: Array.from(new Set(docIds)), extractionFieldIds: fieldIds },
@@ -202,6 +208,7 @@ export class BrsrService {
         text: string;
         answerType: 'NUMERIC' | 'TEXT';
         answer?: string | number;
+        unit?: string;
         metricKey?: string;
         evidence?: string[];
       }>;
@@ -236,12 +243,22 @@ export class BrsrService {
         title: principle === 'General' ? 'General' : `Principle ${principle.slice(1)}`,
         questions: [],
       };
+      // Force null → undefined so the frontend doesn't render the literal
+      // text "null" in the answer box. The frontend already has an
+      // "unanswered" empty state for undefined.
+      const answer = r.value == null ? undefined : r.value;
+      // Friendlier question text — drop the principle name (it's redundant
+      // with the group header) and use the label when no better text exists.
+      const text = r.sectionId && r.sectionId !== `Principle ${principle.slice(1)}`
+        ? r.sectionId
+        : r.label;
       existing.questions.push({
         id: r.label,
         ref: r.label,
-        text: r.sectionId ?? r.label,
-        answerType: typeof r.value === 'number' ? 'NUMERIC' : 'TEXT',
-        answer: r.value as string | number | undefined,
+        text,
+        answerType: typeof answer === 'number' ? 'NUMERIC' : 'TEXT',
+        answer: answer as string | number | undefined,
+        unit: r.unit,
         metricKey: undefined,
         evidence: r.evidence?.documentIds ?? [],
       });

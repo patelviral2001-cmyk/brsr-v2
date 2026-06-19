@@ -65,7 +65,33 @@ export class CalculationProcessor extends WorkerHost {
           })
           .filter((f) => f.expression && f.outputKey);
 
-      // 2. Topologically sort by inputs
+      // 2a. Built-in Scope 2 (Location) fallback. The framework_mapping
+      // table currently describes which canonical_keys feed which
+      // disclosures — it does NOT carry full ESG calculation formulas.
+      // When the caller asks for ghg_scope2_location and we have no
+      // formula row defining it, derive it inline from
+      // `purchased_electricity_kwh × India CEA grid factor` so the
+      // calc_run produces a real, auditable number rather than 0.
+      // Done BEFORE the topo-sort + requiredKeys collection so the input
+      // metric_event query picks up `purchased_electricity_kwh`.
+      const needScope2Loc =
+        (requestedOutputKeys.includes('ghg_scope2_location') ||
+          requestedOutputKeys.length === 0) &&
+        !formulas.some((f) => f.outputKey === 'ghg_scope2_location');
+      if (needScope2Loc) {
+        formulas.push({
+          id: 'builtin:scope2_location_from_electricity',
+          outputKey: 'ghg_scope2_location',
+          // India CEA v18 grid factor (FY23-24): 0.716 kgCO2e/kWh
+          // → 7.16e-4 tCO2e/kWh.
+          expression: 'purchased_electricity_kwh * 0.000716',
+          unit: 'tCO2e',
+          inputs: ['purchased_electricity_kwh'],
+          version: 'builtin-v1',
+        });
+      }
+
+      // 2b. Topologically sort by inputs
       const ordered = topoSortFormulas(formulas);
 
       // 3. Pre-load all relevant MetricEvents for the period + scope.

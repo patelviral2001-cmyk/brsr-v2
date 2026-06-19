@@ -170,6 +170,7 @@ export interface BRSRQuestion {
   text: string;
   answerType: "TEXT" | "NUMERIC" | "TABLE" | "YES_NO";
   answer?: string | number;
+  unit?: string;
   metricKey?: string;
   evidence?: ID[];
   status: "UNANSWERED" | "DRAFT" | "ANSWERED" | "ASSURED";
