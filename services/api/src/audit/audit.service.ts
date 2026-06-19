@@ -30,7 +30,7 @@ export class AuditService {
   // after diff). 242 audit rows during the audit reflected ~125 real
   // events doubled at the write layer.
   private readonly recentKeys = new Map<string, number>();
-  private static readonly DEDUPE_TTL_MS = 60_000;
+  private static readonly DEDUPE_TTL_MS = 5_000;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -45,18 +45,18 @@ export class AuditService {
       ]);
       const action = validActions.has(actionEnum) ? actionEnum : 'UPDATE';
 
-      // Dedup against the same (requestId, tenantId, entity, entityId,
-      // action) tuple within the TTL window. If a row was already
-      // written for this request (e.g. by the service-body call), the
-      // interceptor's later call short-circuits. Requests without a
-      // requestId (background jobs, internal callbacks) are not
-      // deduped — those are not driven by @Audit + service pairs.
-      const key = `${input.requestId ?? ''}|${input.tenantId ?? ''}|${input.entity}|${input.entityId ?? ''}|${action}`;
+      // Dedup against the same (tenantId, entity, entityId, action)
+      // tuple within a short TTL. The two write sources (service body
+      // and AuditInterceptor) intentionally don't share a requestId —
+      // the service call omits it — so we can't key on requestId.
+      // 5-second window is short enough that a legitimate distinct
+      // event for the same tuple (e.g. two genuine human clicks) is
+      // already short-circuited by the domain layer (409 "already in
+      // status X") rather than reaching the audit write a second time.
+      const key = `${input.tenantId ?? ''}|${input.entity}|${input.entityId ?? ''}|${action}`;
       this.purgeExpiredKeys();
-      if (input.requestId) {
-        if (this.recentKeys.has(key)) return;
-        this.recentKeys.set(key, Date.now() + AuditService.DEDUPE_TTL_MS);
-      }
+      if (this.recentKeys.has(key)) return;
+      this.recentKeys.set(key, Date.now() + AuditService.DEDUPE_TTL_MS);
 
       await (this.prisma as any).auditLog.create({
         data: {
