@@ -68,10 +68,15 @@ export class DashboardService {
 
     // Forensic Flow #7: energyIntensity used to reuse the tCO2e sparkline
     // — the card showed "MWh" headline with a tCO2e curve underneath.
-    // Build a separate MWh series from purchased_electricity_kwh.
+    // Build a separate MWh series from purchased_electricity_kwh OR the
+    // synonymous electricity_from_grid_kwh (the AI engine emits either
+    // depending on which extractor regex fires).
     const monthlyMwh = new Map<string, Decimal>();
     for (const ev of thisFyEvents) {
-      if (ev.canonicalKey !== 'purchased_electricity_kwh') continue;
+      if (
+        ev.canonicalKey !== 'purchased_electricity_kwh' &&
+        ev.canonicalKey !== 'electricity_from_grid_kwh'
+      ) continue;
       const ym = ev.periodEnd.toISOString().slice(0, 7);
       const mwh = ev.value.div(1000);
       monthlyMwh.set(ym, (monthlyMwh.get(ym) ?? new Decimal(0)).plus(mwh));
@@ -275,7 +280,11 @@ export class DashboardService {
   ): Decimal {
     let total = new Decimal(0);
     for (const ev of events) {
-      if (ev.canonicalKey === 'purchased_electricity_kwh') {
+      // Sum both synonymous keys — see dashboard.service.ts:115-style note.
+      if (
+        ev.canonicalKey === 'purchased_electricity_kwh' ||
+        ev.canonicalKey === 'electricity_from_grid_kwh'
+      ) {
         total = total.plus(ev.value);
       }
     }
