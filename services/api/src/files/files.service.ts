@@ -5,7 +5,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { firstValueFrom } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
-import { createHash } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { Decimal } from 'decimal.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3Storage } from '../common/utils/s3.client';
@@ -352,15 +352,73 @@ export class FilesService {
   }
 
   async signedUrl(tenantId: string, id: string, ttlSeconds = 600): Promise<string> {
+    // We deliberately do NOT presign an S3 URL. The deployed S3 endpoint
+    // (http://minio:9000) lives on the internal docker network and is
+    // unreachable from the customer's browser. Instead we return a
+    // public-base /download URL with a short-lived HMAC access token so
+    // iframes / <img> tags can fetch the bytes without an Authorization
+    // header. The /download handler proxies the object through this Node
+    // process — same content, reachable host.
     const doc = await this.findOne(tenantId, id);
-    // Force browser download (Content-Disposition: attachment) so any
-    // attacker-controlled HTML/SVG isn't rendered in the user's session.
-    return this.s3.presignGet(
-      doc.s3Bucket,
-      doc.s3Key,
-      ttlSeconds,
-      sanitizeFilename(doc.originalName ?? 'document'),
-    );
+    const exp = Math.floor(Date.now() / 1000) + Math.max(60, ttlSeconds);
+    const token = this.signFileAccessToken(doc.id, tenantId, exp);
+    const base = (this.config.get<string>('PUBLIC_BASE_URL') ?? '').replace(/\/$/, '');
+    const path = `/api/v1/v1/files/${doc.id}/view?access=${token}`;
+    return base ? `${base}${path}` : path;
+  }
+
+  /** Look up a document by id with no tenant filter — used only by the
+   *  /:id/view route, which derives the tenant from the HMAC token's
+   *  binding instead of from a JWT principal. */
+  async findOneAcrossTenants(id: string) {
+    return (this.prisma as any).document.findUnique({ where: { id } });
+  }
+
+  /**
+   * Issues a short-lived HMAC token that the /download handler accepts in
+   * place of a Bearer JWT. Lets browsers stream the file from <iframe src>
+   * or <img src> without Authorization headers, while still proving the
+   * request was authorised by a logged-in caller within `exp`.
+   */
+  signFileAccessToken(docId: string, tenantId: string, exp: number): string {
+    const secret = this.fileAccessSecret();
+    const payload = `${docId}.${tenantId}.${exp}`;
+    const sig = createHmac('sha256', secret).update(payload).digest('base64url');
+    return `${exp}.${sig}`;
+  }
+
+  /**
+   * Returns true iff `token` was produced by signFileAccessToken for the
+   * same (docId, tenantId) and has not expired. timingSafeEqual prevents
+   * leaking signature comparison time.
+   */
+  verifyFileAccessToken(token: string, docId: string, tenantId: string): boolean {
+    if (!token || typeof token !== 'string') return false;
+    const dot = token.indexOf('.');
+    if (dot < 1) return false;
+    const expStr = token.slice(0, dot);
+    const sig = token.slice(dot + 1);
+    const exp = Number(expStr);
+    if (!Number.isFinite(exp) || exp < Math.floor(Date.now() / 1000)) return false;
+    const expected = createHmac('sha256', this.fileAccessSecret())
+      .update(`${docId}.${tenantId}.${exp}`)
+      .digest('base64url');
+    if (expected.length !== sig.length) return false;
+    try {
+      return timingSafeEqual(Buffer.from(expected), Buffer.from(sig));
+    } catch {
+      return false;
+    }
+  }
+
+  private fileAccessSecret(): string {
+    // Reuse INTERNAL_CALLBACK_SECRET as the HMAC key — it's already a
+    // 32+ char random secret distinct per environment.
+    const s = this.config.get<string>('INTERNAL_CALLBACK_SECRET');
+    if (!s) {
+      throw new Error('INTERNAL_CALLBACK_SECRET not configured — cannot sign file access tokens');
+    }
+    return s;
   }
 
   /**

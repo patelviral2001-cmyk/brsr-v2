@@ -98,10 +98,10 @@ export class FilesController {
   }
 
   /**
-   * Auth-checked file download. Streams the object from object storage through
-   * the API so the customer's browser never sees the internal MinIO endpoint
-   * (which is unreachable from outside the docker network) and so we get a
-   * single, audited code path for "download original document".
+   * Auth-checked file download (requires Bearer JWT). Streams the object
+   * from object storage through this Node process so the customer's
+   * browser never sees the internal MinIO endpoint (unreachable from
+   * outside the docker network) and so we get a single audited code path.
    */
   @Get(':id/download')
   async download(
@@ -110,6 +110,36 @@ export class FilesController {
     @Res() res: Response,
   ) {
     return this.svc.streamDownload(user.tenantId, id, res);
+  }
+
+  /**
+   * Public file view — accepts a short-lived HMAC token in `?access=`
+   * instead of a Bearer JWT. Issued by GET /:id/signed-url. Lets browsers
+   * load the original document in <iframe src> or <img src> where the
+   * Authorization header cannot be set. The token binds (docId, tenantId)
+   * so it cannot be replayed against a different document.
+   */
+  @Public()
+  @Get(':id/view')
+  async view(
+    @Param('id', ParseCuidPipe) id: string,
+    @Query('access') access: string | undefined,
+    @Res() res: Response,
+  ) {
+    if (!access) {
+      res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Missing access token' } });
+      return;
+    }
+    const doc = await this.svc.findOneAcrossTenants(id);
+    if (!doc) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Document not found' } });
+      return;
+    }
+    if (!this.svc.verifyFileAccessToken(access, doc.id, doc.tenantId)) {
+      res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid or expired access token' } });
+      return;
+    }
+    return this.svc.streamDownload(doc.tenantId, id, res);
   }
 
   @Delete(':id')
