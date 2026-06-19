@@ -103,3 +103,5 @@ services/ai-engine/tests/benchmark/fixtures-rc/
 services/ai-engine/tests/benchmark/fixtures/
 services/ai-engine/tests/benchmark/benchmark_results.json
 services/ai-engine/qa_*.py
+tests/e2e/report.json
+tests/e2e/results/
