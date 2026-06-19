@@ -167,6 +167,18 @@ def to_backend_callback_payload(
         bbox: list[float] = []
         if f.source_bbox is not None:
             bbox = [f.source_bbox.x0, f.source_bbox.y0, f.source_bbox.x1, f.source_bbox.y1]
+        # ISO-format period so the backend can hydrate Prisma Date columns
+        # directly. Missing → omit (the backend DTO field is @IsOptional).
+        period_start = (
+            f.period_start.isoformat()
+            if getattr(f, "period_start", None) is not None
+            else None
+        )
+        period_end = (
+            f.period_end.isoformat()
+            if getattr(f, "period_end", None) is not None
+            else None
+        )
         backend_fields.append(
             {
                 "fieldKey": f.canonical_key,
@@ -180,6 +192,8 @@ def to_backend_callback_payload(
                 "pageNumber": f.source_page,
                 "bbox": bbox,
                 "evidenceText": (f.raw_text or "")[:1000] if f.raw_text else None,
+                "periodStart": period_start,
+                "periodEnd": period_end,
             }
         )
 
@@ -356,6 +370,40 @@ class DocumentOrchestrator:
         skip_index: bool = False,
         redis: Any = None,
     ) -> ExtractResponse:
+        # -------------------------------------------------------------
+        # Layered-pipeline delegation. When USE_LAYERED_PIPELINE=true,
+        # route the whole extraction core through PipelineOrchestrator
+        # so the DISCOM rule extractor (and any future rule families)
+        # can short-circuit the LLM. The legacy path below stays as the
+        # fallback for any failure inside the layered pipeline.
+        # -------------------------------------------------------------
+        if self._layered is not None:
+            try:
+                logger.info(
+                    "orchestrator.start",
+                    tenant=hash_tenant(req.tenant_id),
+                    file=req.file_id,
+                    kind="layered",
+                    size=len(data),
+                )
+                layered_resp = await self._layered.run_from_bytes(
+                    req=req, data=data, filename=filename, response=response, t0=t0
+                )
+                self._emit_extraction_log(
+                    req,
+                    layered_resp,
+                    model="layered",
+                    tokens_in=0,
+                    tokens_out=0,
+                )
+                return layered_resp
+            except Exception as e:  # noqa: BLE001 - fall back to legacy path on any failure
+                logger.warning(
+                    "orchestrator.layered_failed_falling_back",
+                    err=redact_pii(str(e)),
+                    file=req.file_id,
+                )
+
         budget = DocBudget(
             document_id=req.file_id,
             tenant_id=req.tenant_id,

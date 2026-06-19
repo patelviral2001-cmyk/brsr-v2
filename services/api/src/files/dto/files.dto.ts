@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Allow, IsArray, IsBoolean, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 
 export class UploadFileDto {
   @ApiPropertyOptional({ description: 'Document type hint for the extractor', example: 'utility_bill' })
@@ -34,7 +34,11 @@ export class ExtractionFieldCallbackDto {
   @IsString()
   fieldKey!: string;
 
+  // `value` accepts number | string | null | array depending on metric kind.
+  // class-validator's whitelist drops properties with NO @Is* decorator; the
+  // explicit @Allow() keeps it through validation without forcing a type.
   @ApiProperty()
+  @Allow()
   value!: unknown;
 
   @ApiPropertyOptional()
@@ -60,6 +64,19 @@ export class ExtractionFieldCallbackDto {
   @IsOptional()
   @IsString()
   evidenceText?: string;
+
+  // Carry the period the AI engine parsed from the document text. Without
+  // these, the auto-promote to metric_event silently skips (metric_events
+  // require period_start/end) and the document→metric lineage breaks.
+  @ApiPropertyOptional({ description: 'Period start, ISO 8601 date' })
+  @IsOptional()
+  @IsString()
+  periodStart?: string;
+
+  @ApiPropertyOptional({ description: 'Period end, ISO 8601 date' })
+  @IsOptional()
+  @IsString()
+  periodEnd?: string;
 }
 
 export class ExtractionCallbackDto {

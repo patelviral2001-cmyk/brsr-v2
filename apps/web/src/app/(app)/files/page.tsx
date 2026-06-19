@@ -65,7 +65,7 @@ export default function FilesPage() {
               </Link>
             </Button>
             <Button size="sm" asChild>
-              <Link href="/files/upload" aria-label="Upload new file">
+              <Link href="/files/upload" aria-label="Upload new file" data-testid="upload-trigger">
                 <Upload className="h-4 w-4" />Upload
               </Link>
             </Button>
@@ -118,7 +118,7 @@ export default function FilesPage() {
         <EmptyState
           title={files?.length ? "No files match your filters" : "No files yet"}
           description={files?.length ? "Try clearing filters." : "Upload your first document to start extracting ESG signals."}
-          action={<Button asChild><Link href="/files/upload"><Upload className="h-4 w-4" />Upload your first document</Link></Button>}
+          action={<Button asChild><Link href="/files/upload" data-testid="upload-empty-cta"><Upload className="h-4 w-4" />Upload your first document</Link></Button>}
         />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

@@ -22,16 +22,18 @@ export class ExtractionService {
     const maxConf = q.maxConfidence ?? 0.85;
     const take = Math.min(Math.max(1, q.take ?? 50), 200);
     // Schema ExtractionStatus enum: DRAFT|NEEDS_REVIEW|APPROVED|REJECTED|OVERRIDDEN.
-    // AUTO_ACCEPTED does not exist.
-    const status = q.status
+    // The page's purpose is "fields that haven't yet reached metric_event":
+    // both NEEDS_REVIEW (low-confidence) and DRAFT (fresh, not yet approved).
+    // The previous OR filter dropped high-confidence DRAFT rows, so newly
+    // extracted bills were invisible to the customer.
+    const statusFilter = q.status
       ? { status: q.status as any }
       : { status: { in: ['NEEDS_REVIEW', 'DRAFT'] as string[] } };
     return (this.prisma as any).extractionField.findMany({
       where: {
         tenantId,
         documentId: q.documentId,
-        OR: [{ confidenceComposite: { lt: maxConf } }, { status: 'NEEDS_REVIEW' }],
-        ...status,
+        ...statusFilter,
       },
       include: { document: { select: { id: true, originalName: true, docType: true } } },
       orderBy: [{ confidenceComposite: 'asc' }, { createdAt: 'asc' }],
@@ -107,7 +109,10 @@ export class ExtractionService {
   }
 
   async approve(tenantId: string, id: string, actorId: string) {
-    const before = await (this.prisma as any).extractionField.findFirst({ where: { id, tenantId } });
+    const before = await (this.prisma as any).extractionField.findFirst({
+      where: { id, tenantId },
+      include: { document: true },
+    });
     if (!before) throw new NotFoundException('Field not found');
     if (before.status === 'APPROVED') return before;
 
@@ -124,6 +129,11 @@ export class ExtractionService {
       before,
       after: updated,
     });
+    // Promote the approved extraction into a MetricEvent so downstream
+    // calculations, framework mappings, and reports can see the value.
+    // Without this hop the lineage stops at extraction_field — nothing
+    // ever reaches metric_event, calc_run, or any disclosure.
+    await this.promoteToMetricEvent({ ...updated, document: before.document }, actorId);
     return updated;
   }
 
@@ -144,7 +154,115 @@ export class ExtractionService {
       action: 'APPROVE',
       metadata: { bulkApprove: true, count, ids: dto.ids },
     });
-    return { approved: count };
+    // Promote each newly-approved field. Done sequentially because each
+    // promote independently validates registry/unit/period — a partial
+    // success is preferable to a transaction-wide rollback that would
+    // strand the approval audit log without any metric_events.
+    const approvedFields = await (this.prisma as any).extractionField.findMany({
+      where: { id: { in: dto.ids }, tenantId, status: 'APPROVED' },
+      include: { document: true },
+    });
+    let promoted = 0;
+    for (const f of approvedFields) {
+      try {
+        const created = await this.promoteToMetricEvent(f, actorId);
+        if (created) promoted++;
+      } catch {
+        // promoteToMetricEvent already logs; continue with the rest.
+      }
+    }
+    return { approved: count, promotedToMetricEvent: promoted };
+  }
+
+  /**
+   * Create a MetricEvent row from an APPROVED ExtractionField, linking it via
+   * sourceExtractionId so the full lineage (document → extraction → metric →
+   * calc → report) is queryable. Returns the created event, or null if the
+   * promotion was skipped (e.g. unknown canonical_key, missing period).
+   */
+  private async promoteToMetricEvent(
+    field: any,
+    actorId: string,
+  ): Promise<any | null> {
+    // 1. Idempotency — never create two metric_events for the same extraction.
+    const existing = await (this.prisma as any).metricEvent.findFirst({
+      where: { tenantId: field.tenantId, sourceExtractionId: field.id },
+      select: { id: true },
+    });
+    if (existing) return existing;
+
+    // 2. Canonical-metric registry must know this key. If the DISCOM extractor
+    //    emitted a key that's not in canonical_metric, log and skip rather
+    //    than silently create an orphan metric_event.
+    const reg = await (this.prisma as any).canonicalMetric.findUnique({
+      where: { key: field.canonicalKey },
+    });
+    if (!reg) {
+      // logger via audit only — service layer; avoid noise on every approve.
+      return null;
+    }
+
+    // 3. Period: prefer the field's own period (extractor-parsed), then fall
+    //    back to the document's period if present.
+    const periodStart: Date | null =
+      field.periodStart ?? field.document?.periodStart ?? null;
+    const periodEnd: Date | null =
+      field.periodEnd ?? field.document?.periodEnd ?? null;
+    if (!periodStart || !periodEnd) return null;
+
+    // 4. Numeric value required for a metric_event. Text-only extractions
+    //    (narratives, categorical) don't become metric_events.
+    if (field.valueNum == null) return null;
+
+    // 5. Unit: trust the extracted unit but ensure it's in the allowed set
+    //    for this canonical metric. Mismatch → skip (the extractor is wrong;
+    //    forcing a bad unit into metric_event would corrupt downstream calcs).
+    const unit: string = field.unitExtracted ?? reg.canonicalUnit ?? '';
+    const allowed = (reg.allowedUnits ?? []) as string[];
+    if (reg.canonicalUnit && reg.canonicalUnit !== unit && !allowed.includes(unit)) {
+      return null;
+    }
+
+    // 6. Scope node from the parent document. If the document had no scope
+    //    assigned, the metric can't be attributed — skip.
+    const scopeNodeId: string | null = field.document?.scopeNodeId ?? null;
+    if (!scopeNodeId) return null;
+
+    const event = await (this.prisma as any).metricEvent.create({
+      data: {
+        tenantId: field.tenantId,
+        canonicalKey: field.canonicalKey,
+        scopeNodeId,
+        periodStart,
+        periodEnd,
+        value: field.valueNum,
+        unit,
+        sourceType: 'EXTRACTION' as any,
+        sourceExtractionId: field.id,
+        confidenceLevel: this.confidenceLevelOf(field.confidenceComposite),
+        dataQualityScore: field.confidenceComposite,
+        status: 'DRAFT' as any,
+        submittedBy: actorId,
+        comment: `Auto-promoted from approved extraction ${field.id}`,
+      },
+    });
+    await this.audit.log({
+      tenantId: field.tenantId,
+      userId: actorId,
+      entity: 'MetricEvent',
+      entityId: event.id,
+      action: 'CREATE',
+      after: event,
+      metadata: { autoPromotedFrom: field.id },
+    });
+    return event;
+  }
+
+  private confidenceLevelOf(score: number | null | undefined): string | null {
+    if (score == null) return null;
+    if (score >= 0.85) return 'HIGH';
+    if (score >= 0.65) return 'MEDIUM';
+    return 'LOW';
   }
 
   async stats(tenantId: string) {

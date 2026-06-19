@@ -283,6 +283,9 @@ services:
       S3_FORCE_PATH_STYLE: "true"
       S3_BUCKET_EVIDENCE: brsr-evidence
       S3_BUCKET_EXTRACTS: brsr-extracts
+      # Route extraction through the 6-layer pipeline so the DISCOM rule
+      # extractor short-circuits the LLM on utility bills.
+      USE_LAYERED_PIPELINE: "true"
     expose:
       - "8100"
     healthcheck:
@@ -322,7 +325,15 @@ services:
     expose:
       - "3000"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/"]
+      # Hit Next.js on localhost without following redirects. `/` returns 307
+      # to /login for unauthenticated users; the container can't resolve the
+      # public hostname in the redirect target, so wget's auto-redirect path
+      # would fail. Node-based check accepts any <500 status as healthy.
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get({host:'127.0.0.1',port:3000,path:'/',timeout:3000},r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"
       interval: 20s
       timeout: 5s
       retries: 5

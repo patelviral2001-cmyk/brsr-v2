@@ -75,7 +75,7 @@ export const ENDPOINTS = {
   // Keep old aliases so the existing /frameworks pages don't break.
   frameworks: "/brsr/mappings",
   framework: (id: string) => `/brsr/mappings/${id}`,
-  brsrSections: "/brsr/preview",
+  brsrSections: "/brsr/sections",
   mappings: "/brsr/mappings",
 
   // ---- Carbon ----

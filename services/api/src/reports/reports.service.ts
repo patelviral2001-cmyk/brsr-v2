@@ -46,6 +46,14 @@ export class ReportsService {
     const r = await this.findOne(tenantId, id);
     if (r.status === 'FILED') throw new ConflictException('Report already filed');
     if (r.status === 'APPROVED') return r;
+    // Only completed, reviewable states can be approved. GENERATING means a
+    // worker is still producing the report; PUBLISHED is post-filing.
+    const approvableFrom = new Set(['DRAFT', 'GENERATED', 'IN_REVIEW']);
+    if (!approvableFrom.has(r.status)) {
+      throw new ConflictException(
+        `Report in status ${r.status} cannot be approved. Must be one of ${[...approvableFrom].join(',')}.`,
+      );
+    }
     // Schema: Report.generatedBy is the author; segregate-of-duties check
     // refuses self-approval.
     if (r.generatedBy === actorId) {

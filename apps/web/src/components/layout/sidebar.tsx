@@ -26,8 +26,8 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/hierarchy", label: "Hierarchy", icon: Network },
-      { href: "/files", label: "Files", icon: FileText, badge: 4 },
-      { href: "/extraction-review", label: "Extraction Review", icon: ScanLine, badge: 12 },
+      { href: "/files", label: "Files", icon: FileText },
+      { href: "/extraction-review", label: "Extraction Review", icon: ScanLine },
       { href: "/metrics", label: "Metrics", icon: Database },
     ],
   },

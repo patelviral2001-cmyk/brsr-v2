@@ -4,7 +4,8 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { BullModule } from '@nestjs/bullmq';
 import { ScheduleModule } from '@nestjs/schedule';
 import { HttpModule } from '@nestjs/axios';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { TenantThrottlerGuard } from './common/guards/tenant-throttler.guard';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { LoggerModule } from 'nestjs-pino';
@@ -32,6 +33,7 @@ import { AuditModule } from './audit/audit.module';
 import { CopilotModule } from './copilot/copilot.module';
 import { HealthModule } from './health/health.module';
 import { DashboardGraphqlModule } from './graphql/dashboard.graphql.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { WorkflowModule } from './workflow/workflow.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -111,12 +113,13 @@ import { configValidationSchema } from './config/config.schema';
     AuditModule,
     CopilotModule,
     HealthModule,
+    DashboardModule,
     DashboardGraphqlModule,
     WorkflowModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: TenantThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: MetricsInterceptor },
   ],
 })

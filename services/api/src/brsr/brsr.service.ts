@@ -5,6 +5,7 @@ import { Decimal } from 'decimal.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import {
+  BrsrFramework,
   GenerateReportDto,
   MappingFilterDto,
   PreviewBrsrDto,
@@ -164,17 +165,113 @@ export class BrsrService {
             value = sorted.reduce((a, c) => a.plus(c.value), new Decimal(0)).toString();
         }
       }
+      // Pick the unit from any of the contributing metric_events. The
+      // resolve loop produces one value per mapping, so taking the first
+      // event's unit is the right thing (all candidates of the same
+      // canonical_key are validated to share a unit at ingest time).
+      const unit = candidates[0]?.unit;
       out.push({
         sectionId: m.frameworkSection ?? m.frameworkCode,
         label: m.frameworkCode,
         value,
-        unit: undefined,
+        unit,
         sourceMetricEventIds: sourceIds,
         calcRunId,
         evidence: { documentIds: Array.from(new Set(docIds)), extractionFieldIds: fieldIds },
       });
     }
     return out;
+  }
+
+  // ---- Sections (frontend-shaped) ----
+
+  /**
+   * Returns the BRSR section tree the Frameworks UI expects. Auto-defaults
+   * scope to all root entity nodes for the tenant, calls `resolve`, then
+   * groups by principle prefix (`P6-Q6` → principle `P6`) so the frontend's
+   * BRSRSection[]/BRSRQuestion[] shape lights up without any joins on
+   * its side.
+   */
+  async sections(
+    tenantId: string,
+    args: { fy: string; framework: BrsrFramework },
+  ): Promise<
+    Array<{
+      id: string;
+      principle: string;
+      title: string;
+      total: number;
+      answered: number;
+      questions: Array<{
+        id: string;
+        ref: string;
+        text: string;
+        answerType: 'NUMERIC' | 'TEXT';
+        answer?: string | number;
+        unit?: string;
+        metricKey?: string;
+        evidence?: string[];
+      }>;
+    }>
+  > {
+    const roots: { id: string }[] = await (this.prisma as any).entityNode.findMany({
+      where: { tenantId },
+      select: { id: true },
+      take: 50,
+    });
+    const scopeNodeIds = roots.map((r) => r.id);
+    if (scopeNodeIds.length === 0) return [];
+    const resolved = await this.resolve(tenantId, {
+      fy: args.fy,
+      framework: args.framework,
+      scopeNodeIds,
+    } as ResolveBrsrDto);
+
+    // Group by principle prefix (e.g. P6-Q6 → P6). Mapping rows that don't
+    // follow the Principle-prefixed shape fall under a single "General"
+    // bucket so they're still visible.
+    const groups = new Map<
+      string,
+      { principle: string; title: string; questions: Array<any> }
+    >();
+    for (const r of resolved) {
+      const label = r.label ?? '';
+      const principle = /^P(\d+)/i.exec(label)?.[0]?.toUpperCase() ?? 'General';
+      const groupId = principle;
+      const existing = groups.get(groupId) ?? {
+        principle,
+        title: principle === 'General' ? 'General' : `Principle ${principle.slice(1)}`,
+        questions: [],
+      };
+      // Force null → undefined so the frontend doesn't render the literal
+      // text "null" in the answer box. The frontend already has an
+      // "unanswered" empty state for undefined.
+      const answer = r.value == null ? undefined : r.value;
+      // Friendlier question text — drop the principle name (it's redundant
+      // with the group header) and use the label when no better text exists.
+      const text = r.sectionId && r.sectionId !== `Principle ${principle.slice(1)}`
+        ? r.sectionId
+        : r.label;
+      existing.questions.push({
+        id: r.label,
+        ref: r.label,
+        text,
+        answerType: typeof answer === 'number' ? 'NUMERIC' : 'TEXT',
+        answer: answer as string | number | undefined,
+        unit: r.unit,
+        metricKey: undefined,
+        evidence: r.evidence?.documentIds ?? [],
+      });
+      groups.set(groupId, existing);
+    }
+    return Array.from(groups.values()).map((g) => ({
+      id: g.principle.toLowerCase(),
+      principle: g.principle,
+      title: g.title,
+      total: g.questions.length,
+      answered: g.questions.filter((q) => q.answer != null).length,
+      questions: g.questions,
+    }));
   }
 
   // ---- Preview ----

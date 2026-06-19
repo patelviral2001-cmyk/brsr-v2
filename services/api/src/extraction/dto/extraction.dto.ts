@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsNumber, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+
+export enum ExtractionFieldStatus {
+  DRAFT = 'DRAFT',
+  NEEDS_REVIEW = 'NEEDS_REVIEW',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  OVERRIDDEN = 'OVERRIDDEN',
+}
 
 export class UpdateExtractionFieldDto {
   @ApiProperty({ description: 'Reviewer-corrected value' })
@@ -27,14 +35,18 @@ export class RejectExtractionFieldDto {
 export class BulkApproveDto {
   @ApiProperty({ type: [String] })
   @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(1000)
   @IsString({ each: true })
   ids!: string[];
 }
 
 export class ExtractionQueueQueryDto {
-  @ApiPropertyOptional({ description: 'Maximum confidence to include in the queue (default 0.85)' })
+  @ApiPropertyOptional({ description: 'Maximum confidence to include in the queue (0..1, default 0.85)' })
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  @Max(1)
   maxConfidence?: number;
 
   @ApiPropertyOptional()
@@ -42,14 +54,16 @@ export class ExtractionQueueQueryDto {
   @IsString()
   documentId?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ enum: ExtractionFieldStatus })
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(ExtractionFieldStatus)
+  status?: ExtractionFieldStatus;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ description: 'Page size (1..200)' })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Max(200)
   take?: number;
 
   @ApiPropertyOptional()

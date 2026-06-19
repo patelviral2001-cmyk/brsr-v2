@@ -13,10 +13,17 @@ export function BRSRQuestionCard({ question }: { question: BRSRQuestion }) {
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="font-mono">{question.ref}</Badge>
-            <Badge variant="outline" className={cn(STATUS_COLORS[question.status])}>
-              {question.status === "ASSURED" && <ShieldCheck className="mr-1 h-3 w-3" />}
-              {question.status}
-            </Badge>
+            {/* status arrives from /brsr/sections only for answered fields; derive an
+                ANSWERED/UNANSWERED badge inline when the backend didn't supply one. */}
+            {(() => {
+              const status = question.status ?? (question.answer != null ? "ANSWERED" : "UNANSWERED");
+              return (
+                <Badge variant="outline" className={cn(STATUS_COLORS[status])}>
+                  {status === "ASSURED" && <ShieldCheck className="mr-1 h-3 w-3" />}
+                  {status}
+                </Badge>
+              );
+            })()}
             {question.metricKey && (
               <Badge variant="primary" size="sm">
                 <code className="font-mono">{question.metricKey}</code>
@@ -29,9 +36,22 @@ export function BRSRQuestionCard({ question }: { question: BRSRQuestion }) {
           <Pencil className="h-4 w-4" />
         </button>
       </div>
-      {question.answer !== undefined && (
-        <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-700">
-          {typeof question.answer === "string" ? question.answer : String(question.answer)}
+      {question.answer == null || question.answer === "" ? (
+        <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm text-slate-400">
+          —
+        </div>
+      ) : (
+        <div className="mt-3 flex items-baseline gap-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-700">
+          <span className="font-semibold text-slate-900">
+            {typeof question.answer === "number"
+              ? question.answer.toLocaleString()
+              : typeof question.answer === "string" && /^-?\d+(\.\d+)?$/.test(question.answer)
+                ? Number(question.answer).toLocaleString()
+                : String(question.answer)}
+          </span>
+          {question.unit ? (
+            <span className="text-xs text-slate-500">{question.unit}</span>
+          ) : null}
         </div>
       )}
       {question.evidence && question.evidence.length > 0 && (

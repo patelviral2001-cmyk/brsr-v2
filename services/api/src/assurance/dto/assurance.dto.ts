@@ -90,13 +90,22 @@ export class CreateExceptionDto {
   description!: string;
 }
 
+export enum AuditExceptionResponseStatus {
+  IN_REVIEW = 'IN_REVIEW',
+  RESPONDED = 'RESPONDED',
+  CLOSED = 'CLOSED',
+}
+
 export class RespondExceptionDto {
   @ApiProperty()
   @IsString()
   response!: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    enum: AuditExceptionResponseStatus,
+    description: 'Workflow state to move the exception into. Defaults to RESPONDED.',
+  })
   @IsOptional()
-  @IsString()
-  status?: 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'WONT_FIX';
+  @IsEnum(AuditExceptionResponseStatus)
+  status?: AuditExceptionResponseStatus;
 }

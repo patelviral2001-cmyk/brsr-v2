@@ -1,0 +1,114 @@
+{
+  "journey": [
+    {
+      "name": "1. Login page renders",
+      "status": "PASS",
+      "note": "title=\"BRSR AI Platform — The ESG operating system for Indian enterprises\" email-inputs=1 password-inputs=1",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\01_login_page.png"
+    },
+    {
+      "name": "1b. Login submission redirects off /login",
+      "status": "PASS",
+      "note": "current url = https://srv1763596.hstgr.cloud/dashboard",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\02_after_login.png"
+    },
+    {
+      "name": "2. Company hierarchy renders with seeded data",
+      "status": "PASS",
+      "note": "url=https://srv1763596.hstgr.cloud/hierarchy contains-imagine-powertree=true",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\03_hierarchy.png"
+    },
+    {
+      "name": "3a. Files page renders + offers upload",
+      "status": "PASS",
+      "note": "has upload affordance: true",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\04_files_index.png"
+    },
+    {
+      "name": "3b. Upload form accepts a file",
+      "status": "FAIL",
+      "note": "file-inputs-found=0 upload-attempted=false",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\05_after_upload.png"
+    },
+    {
+      "name": "4. Extraction queue shows extracted values",
+      "status": "FAIL",
+      "note": "url=https://srv1763596.hstgr.cloud/extraction content-has-extracted-context=false",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\06_extraction_queue.png"
+    },
+    {
+      "name": "5. Metrics page renders + shows the canonical metric registry",
+      "status": "FAIL",
+      "note": "has electricity context: false",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\07_metrics.png"
+    },
+    {
+      "name": "6. Scope 2 page shows electricity-based emissions context",
+      "status": "PASS",
+      "note": "scope2 content present: true",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\08_scope2.png"
+    },
+    {
+      "name": "7. BRSR framework view shows Principle 6",
+      "status": "FAIL",
+      "note": "BRSR P6 surfaced: false",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\09_brsr_principle6.png"
+    },
+    {
+      "name": "8. Reports page exists + has Generate affordance",
+      "status": "PASS",
+      "note": "generate affordance: true",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\10_reports_index.png"
+    },
+    {
+      "name": "8b. Report generation form renders",
+      "status": "PASS",
+      "note": "form fields visible: true",
+      "screenshot": "C:\\Users\\admin\\brsr-v2\\qa-ui-test\\shots\\11_reports_generate.png"
+    }
+  ],
+  "consoleErrors": [
+    "Loading the stylesheet 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap' violates the following Content Security Policy ",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Failed to load resource: the server responded with a status of 400 ()",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Failed to load resource: the server responded with a status of 400 ()",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Loading the stylesheet 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap' violates the following Content Security Policy ",
+    "Loading the stylesheet 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap' violates the following Content Security Policy ",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Loading the stylesheet 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap' violates the following Content Security Policy ",
+    "Loading the stylesheet 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap' violates the following Content Security Policy ",
+    "TypeError: Cannot read properties of undefined (reading 'slice')\n    at b (https://srv1763596.hstgr.cloud/_next/static/chunks/app/(app)/metrics/page-3e3f11826d9782de.js:1:6640)\n    at l9 (https://srv1",
+    "[ErrorBoundary] TypeError: Cannot read properties of undefined (reading 'slice')\n    at b (https://srv1763596.hstgr.cloud/_next/static/chunks/app/(app)/metrics/page-3e3f11826d9782de.js:1:6640)\n    at ",
+    "Loading the stylesheet 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap' violates the following Content Security Policy ",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Failed to load resource: the server responded with a status of 404 ()",
+    "Failed to load resource: the server responded with a status of 400 ()"
+  ],
+  "failedRequests": [
+    "GET https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&displ csp",
+    "GET https://srv1763596.hstgr.cloud/dashboard?_rsc=YARl45dmeVER7bRN net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/dashboard?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/extraction-review?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/files?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/hierarchy?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/metrics?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/reports?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/carbon?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/suppliers?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/copilot?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/audit-log?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/settings?_rsc=0emvZ8YlOZ3v4i2x net::ERR_ABORTED",
+    "GET https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&displ csp",
+    "GET https://srv1763596.hstgr.cloud/frameworks?_rsc=ihkVxvSGlnFkW8lj net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/files?_rsc=ihkVxvSGlnFkW8lj net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/dashboard?_rsc=ihkVxvSGlnFkW8lj net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/metrics?_rsc=ihkVxvSGlnFkW8lj net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/reports?_rsc=ihkVxvSGlnFkW8lj net::ERR_ABORTED",
+    "GET https://srv1763596.hstgr.cloud/calculations?_rsc=ihkVxvSGlnFkW8lj net::ERR_ABORTED"
+  ]
+}

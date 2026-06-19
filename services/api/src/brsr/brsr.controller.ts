@@ -27,6 +27,22 @@ export class BrsrController {
     return this.svc.resolve(user.tenantId, dto);
   }
 
+  // Frontend Frameworks → BRSR drill-down hits this. GET-friendly so the
+  // page can render without first having to gather the user's scope tree:
+  // the service auto-defaults scope to all root entity nodes for the tenant.
+  @Get('sections')
+  @ApiOperation({ summary: 'Frontend-shaped BRSR section tree with values' })
+  sections(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('fy') fy?: string,
+    @Query('framework') framework?: string,
+  ) {
+    return this.svc.sections(user.tenantId, {
+      fy: fy ?? 'FY24-25',
+      framework: (framework ?? 'BRSR') as any,
+    });
+  }
+
   @Post('preview')
   @ApiOperation({ summary: 'Return rendered HTML preview of the resolved report' })
   @Header('Cache-Control', 'no-store')

@@ -27,9 +27,19 @@ export interface HierarchyNode {
   metadata?: Record<string, unknown>;
 }
 
+// Mirrors backend DocStatus enum (services/api/prisma/schema.prisma).
+// REVIEW_NEEDED is the canonical post-extraction triage state; NEEDS_REVIEW
+// is retained for backwards compatibility with older records.
+// PROCESSING / FAILED are legacy UI aliases for CLASSIFIED / REJECTED.
 export type FileStatus =
+  | "PENDING"
+  | "UPLOADED"
+  | "CLASSIFIED"
   | "PROCESSING"
   | "EXTRACTED"
+  | "EXTRACTION_FAILED"
+  | "PARTIAL"
+  | "REVIEW_NEEDED"
   | "NEEDS_REVIEW"
   | "APPROVED"
   | "REJECTED"
@@ -160,6 +170,7 @@ export interface BRSRQuestion {
   text: string;
   answerType: "TEXT" | "NUMERIC" | "TABLE" | "YES_NO";
   answer?: string | number;
+  unit?: string;
   metricKey?: string;
   evidence?: ID[];
   status: "UNANSWERED" | "DRAFT" | "ANSWERED" | "ASSURED";

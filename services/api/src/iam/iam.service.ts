@@ -386,13 +386,16 @@ export class IamService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    // Never leak credential material to the client.
+    const { passwordHash, mfaSecret, ...safe } = user as Record<string, unknown>;
+    return safe;
   }
 
   async listUsers(tenantId: string, q?: string, take = 50, skip = 0) {
     // Cap pagination defensively.
     const t = Math.min(Math.max(1, take), 200);
     const s = Math.max(0, skip);
+    // Explicit select — never return credential material (passwordHash, mfaSecret).
     return (this.prisma as any).user.findMany({
       where: {
         tenantId,
@@ -401,6 +404,20 @@ export class IamService {
           { firstName: { contains: q, mode: 'insensitive' } },
           { lastName: { contains: q, mode: 'insensitive' } },
         ] : undefined,
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        idpSubject: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        locale: true,
+        timezone: true,
+        mfaEnrolled: true,
+        lastLoginAt: true,
+        isActive: true,
+        createdAt: true,
       },
       take: t,
       skip: s,

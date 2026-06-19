@@ -88,3 +88,13 @@ tmp/
 .history/
 
 .vercel
+qa-ui-test/shots-rc/
+qa-ui-test/shots/
+qa-ui-test/shots2/
+qa-ui-test/shots3/
+qa-ui-test/shots4/
+qa-ui-test/node_modules/
+qa-ui-test/*.json
+qa-ui-test/*.csv
+qa-ui-test/*.pdf
+services/ai-engine/tests/benchmark/fixtures-rc/

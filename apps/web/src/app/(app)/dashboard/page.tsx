@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/common/page-header";
 import { ScopeBreadcrumb } from "@/components/common/scope-breadcrumb";
 import { KpiCard } from "@/components/common/kpi-card";
+import { DataErrorBanner } from "@/components/common/data-error-banner";
 import { EmissionsTrendChart } from "@/components/charts/emissions-trend";
 import { EnergyMixChart } from "@/components/charts/energy-mix";
 import { FrameworkCompletionRings } from "@/components/charts/framework-completion-ring";
@@ -17,12 +18,19 @@ import { Sparkles, FileBarChart2, Upload, Database, AlertTriangle, ChevronRight,
 import { useCommandPaletteStore } from "@/stores/command-palette.store";
 
 export default function DashboardPage() {
-  const { data: kpis } = useDashboardKpis() as { data: { esgScore: { value: number; delta: number; target: number; percentile: number }; emissionsTotal: { value: number; delta: number; sparkline: number[] }; energyIntensity: { value: number; delta: number; sparkline: number[] }; dataCompleteness: { value: number; delta: number; target: number } } | undefined };
-  const { data: emissions } = useEmissionsOverview();
-  const { data: frameworks } = useFrameworks();
-  const { data: netzero } = useNetZero();
-  const { data: activity } = useDashboardActivity() as { data: { id: string; at: string; actor: string; action: string; target: string }[] | undefined };
-  const { data: anomalies } = useDashboardAnomalies() as { data: { id: string; severity: string; title: string; impact: string; at: string }[] | undefined };
+  const kpisQ = useDashboardKpis() as { data: { esgScore: { value: number; delta: number; target: number; percentile: number }; emissionsTotal: { value: number; delta: number; sparkline: number[] }; energyIntensity: { value: number; delta: number; sparkline: number[] }; dataCompleteness: { value: number; delta: number; target: number } } | undefined; isError: boolean; refetch: () => void };
+  const emissionsQ = useEmissionsOverview() as { data: any; isError: boolean };
+  const frameworksQ = useFrameworks() as { data: any; isError: boolean };
+  const netzeroQ = useNetZero() as { data: any; isError: boolean };
+  const activityQ = useDashboardActivity() as { data: { id: string; at: string; actor: string; action: string; target: string }[] | undefined; isError: boolean };
+  const anomaliesQ = useDashboardAnomalies() as { data: { id: string; severity: string; title: string; impact: string; at: string }[] | undefined; isError: boolean };
+  const kpis = kpisQ.data;
+  const emissions = emissionsQ.data;
+  const frameworks = frameworksQ.data;
+  const netzero = netzeroQ.data;
+  const activity = activityQ.data;
+  const anomalies = anomaliesQ.data;
+  const hasError = kpisQ.isError || emissionsQ.isError || frameworksQ.isError || netzeroQ.isError || activityQ.isError || anomaliesQ.isError;
   const openPalette = useCommandPaletteStore((s) => s.setOpen);
 
   return (
@@ -38,6 +46,13 @@ export default function DashboardPage() {
           </>
         }
       />
+
+      {hasError ? (
+        <DataErrorBanner
+          message="One or more dashboard sections couldn't load. The data shown below may be incomplete."
+          onRetry={() => kpisQ.refetch()}
+        />
+      ) : null}
 
       {/* KPI Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -5,9 +5,15 @@ import { FRAMEWORKS } from "@/lib/constants";
 
 interface FrameworkRef { id: string; ref: string }
 
-export function FrameworkBadges({ frameworks, max = 4 }: { frameworks: FrameworkRef[]; max?: number }) {
-  const visible = frameworks.slice(0, max);
-  const overflow = frameworks.length - visible.length;
+export function FrameworkBadges({ frameworks, max = 4 }: { frameworks?: FrameworkRef[] | null; max?: number }) {
+  // Some registry entries arrive without a `frameworks` array (older seed
+  // rows, or canonical metrics not yet mapped). Without this guard the
+  // page would crash with "Cannot read properties of undefined (reading
+  // 'slice')" — the exact error reported on /metrics in production.
+  const safe = Array.isArray(frameworks) ? frameworks : [];
+  if (safe.length === 0) return null;
+  const visible = safe.slice(0, max);
+  const overflow = safe.length - visible.length;
   return (
     <div className="flex flex-wrap gap-1">
       {visible.map((f) => {
