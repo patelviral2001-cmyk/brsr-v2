@@ -87,7 +87,9 @@ export default function MaterialityPage() {
                   </div>
                 </div>
                 <div className="text-right text-xs">
-                  <div className="font-semibold tabular-nums text-slate-900">{Math.round(t.impactScore * 100)}</div>
+                  <div className="font-semibold tabular-nums text-slate-900">
+                    {Number.isFinite(t.impactScore) ? Math.round(t.impactScore * 100) : 0}
+                  </div>
                   <div className="text-slate-400">impact</div>
                 </div>
               </div>
@@ -109,11 +111,15 @@ export default function MaterialityPage() {
                 </div>
                 <div className="flex gap-3 text-xs">
                   <div className="text-right">
-                    <div className="font-semibold tabular-nums text-slate-900">{Math.round(s.influence * 100)}</div>
+                    <div className="font-semibold tabular-nums text-slate-900">
+                      {Number.isFinite(s.influence) ? Math.round(s.influence * 100) : 0}
+                    </div>
                     <div className="text-slate-400">infl.</div>
                   </div>
                   <div className="text-right">
-                    <div className="font-semibold tabular-nums text-slate-900">{Math.round(s.interest * 100)}</div>
+                    <div className="font-semibold tabular-nums text-slate-900">
+                      {Number.isFinite(s.interest) ? Math.round(s.interest * 100) : 0}
+                    </div>
                     <div className="text-slate-400">intr.</div>
                   </div>
                 </div>

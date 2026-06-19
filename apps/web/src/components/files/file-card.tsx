@@ -5,7 +5,8 @@ import { FileText, FileSpreadsheet, File as FileIcon, FilePieChart } from "lucid
 import { Badge } from "@/components/ui/badge";
 import { formatBytes, formatRelative } from "@/lib/format";
 import { STATUS_COLORS } from "@/lib/constants";
-import { cn } from "@/lib/utils";
+import { cn, userLabel } from "@/lib/utils";
+import { useUsers } from "@/lib/api/queries";
 import type { FileObject } from "@/types";
 
 function getFileIcon(mime: string | undefined | null) {
@@ -23,6 +24,11 @@ export function FileCard({ file }: { file: FileObject }) {
   const docTypeLabel = docType.replace(/_/g, " ");
   const extractedFieldCount = file.extractedFieldCount ?? 0;
   const avgConfidence = file.avgConfidence ?? 0;
+  // API uses `originalName` (not `filename`) and `uploadedBy` is a raw user id.
+  const f = file as any;
+  const filename = f.originalName ?? f.filename ?? "Untitled";
+  const usersQ = useUsers() as { data: any[] | undefined };
+  const uploaderName = userLabel(f.uploadedBy, usersQ.data);
   return (
     <Link href={`/files/${file.id}`} className="group block">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-soft transition-all hover:border-slate-300 hover:shadow-elevated">
@@ -38,8 +44,10 @@ export function FileCard({ file }: { file: FileObject }) {
             <Icon className="h-5 w-5" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="truncate text-sm font-medium text-slate-900 group-hover:text-primary-800">{file.filename}</div>
-            <div className="text-xs text-slate-500">{file.scopeNodeName}</div>
+            <div className="truncate text-sm font-medium text-slate-900 group-hover:text-primary-800">{filename}</div>
+            {file.scopeNodeName ? (
+              <div className="text-xs text-slate-500">{file.scopeNodeName}</div>
+            ) : null}
           </div>
           <Badge variant="outline" className={cn("shrink-0", file.status ? STATUS_COLORS[file.status] : "")}>
             {isProcessing && <span className="mr-1 h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
@@ -60,7 +68,7 @@ export function FileCard({ file }: { file: FileObject }) {
           )}
         </div>
         <div className="mt-3 text-[10px] text-slate-400">
-          Uploaded {formatRelative(file.uploadedAt)} by {file.uploadedBy ?? "unknown"}
+          Uploaded {formatRelative(file.uploadedAt)} by {uploaderName}
         </div>
       </div>
     </Link>

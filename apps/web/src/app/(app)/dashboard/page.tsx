@@ -12,8 +12,9 @@ import { EmissionsTrendChart } from "@/components/charts/emissions-trend";
 import { EnergyMixChart } from "@/components/charts/energy-mix";
 import { FrameworkCompletionRings } from "@/components/charts/framework-completion-ring";
 import { NetZeroPathway } from "@/components/charts/net-zero-pathway";
-import { useDashboardKpis, useDashboardActivity, useDashboardAnomalies, useEmissionsOverview, useFrameworks, useNetZero } from "@/lib/api/queries";
+import { useDashboardKpis, useDashboardActivity, useDashboardAnomalies, useEmissionsOverview, useFrameworks, useNetZero, useUsers } from "@/lib/api/queries";
 import { formatTonnesCO2e, formatPercent, formatRelative } from "@/lib/format";
+import { userLabel, initials } from "@/lib/utils";
 import { Sparkles, FileBarChart2, Upload, Database, AlertTriangle, ChevronRight, BarChart3, Zap, Leaf, Award } from "lucide-react";
 import { useCommandPaletteStore } from "@/stores/command-palette.store";
 
@@ -29,6 +30,8 @@ export default function DashboardPage() {
   const frameworks = frameworksQ.data;
   const netzero = netzeroQ.data;
   const activity = activityQ.data;
+  const usersQ = useUsers() as { data: any[] | undefined };
+  const users = usersQ.data;
   const anomalies = anomaliesQ.data;
   const hasError = kpisQ.isError || emissionsQ.isError || frameworksQ.isError || netzeroQ.isError || activityQ.isError || anomaliesQ.isError;
   const openPalette = useCommandPaletteStore((s) => s.setOpen);
@@ -231,19 +234,25 @@ export default function DashboardPage() {
               {(Array.isArray(activity) ? activity : []).length === 0 && (
                 <p className="px-2 py-6 text-center text-xs text-slate-400">No recent activity in this period.</p>
               )}
-              {(Array.isArray(activity) ? activity : []).map((a) => (
-                <div key={a.id} className="flex items-center gap-3 rounded-lg border border-transparent p-2.5 transition-colors hover:border-slate-200 hover:bg-slate-50">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700">
-                    {(a.actor ?? "?").slice(0, 2).toUpperCase()}
+              {(Array.isArray(activity) ? activity : []).map((a) => {
+                // The dashboard/activity API returns the raw actor user id;
+                // resolve it against the users list so we render "Demo User"
+                // instead of "cmqhxlui40002o01btz2p939m" in front of customers.
+                const actorName = userLabel(a.actor, users);
+                return (
+                  <div key={a.id} className="flex items-center gap-3 rounded-lg border border-transparent p-2.5 transition-colors hover:border-slate-200 hover:bg-slate-50">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-50 text-xs font-semibold text-primary-700">
+                      {initials(actorName)}
+                    </div>
+                    <div className="min-w-0 flex-1 text-sm">
+                      <span className="font-medium text-slate-900">{actorName}</span>
+                      <span className="text-slate-500"> {a.action} </span>
+                      <span className="font-medium text-slate-900">{a.target}</span>
+                    </div>
+                    <span className="text-xs text-slate-400">{formatRelative(a.at)}</span>
                   </div>
-                  <div className="min-w-0 flex-1 text-sm">
-                    <span className="font-medium text-slate-900">{a.actor}</span>
-                    <span className="text-slate-500"> {a.action} </span>
-                    <span className="font-medium text-slate-900">{a.target}</span>
-                  </div>
-                  <span className="text-xs text-slate-400">{formatRelative(a.at)}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

@@ -22,6 +22,39 @@ export function truncate(s: string, n: number): string {
   return s.slice(0, n - 1) + "…";
 }
 
+/**
+ * Take a possibly-cuid identifier and render a customer-friendly short tag
+ * (e.g. `cmqhxlui40002o01btz2p939m` → `id/2p939m`). Use for raw IDs that
+ * leak into the UI when a join hasn't been resolved.
+ */
+export function shortId(id: string | null | undefined, prefix = "id"): string {
+  if (typeof id !== "string" || !id.trim()) return "—";
+  const tail = id.replace(/[^a-z0-9]/gi, "").slice(-6);
+  return tail ? `${prefix}/${tail}` : "—";
+}
+
+/**
+ * Resolve a user id against a list (`{id, firstName, lastName, email, name?}`)
+ * and return the best display name. Falls back to `shortId(id, "user")`.
+ */
+export function userLabel(
+  id: string | null | undefined,
+  users: Array<any> | null | undefined,
+): string {
+  if (!id) return "system";
+  const list = Array.isArray(users) ? users : [];
+  const u = list.find((u) => u?.id === id) as any;
+  if (u) {
+    return (
+      u.name ||
+      [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
+      u.email ||
+      shortId(id, "user")
+    );
+  }
+  return shortId(id, "user");
+}
+
 export function initials(name: unknown): string {
   // Defensive — callers used to crash with "Cannot read properties of
   // undefined (reading 'split')" when the API didn't supply a name.

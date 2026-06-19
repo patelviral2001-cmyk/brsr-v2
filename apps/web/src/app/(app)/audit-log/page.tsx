@@ -9,14 +9,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
 import { TableSkeleton } from "@/components/common/loading-skeleton";
-import { useAuditLog } from "@/lib/api/queries";
+import { useAuditLog, useUsers } from "@/lib/api/queries";
 import { Download, Search, ChevronDown, ScrollText, AlertTriangle } from "lucide-react";
 import { formatRelative } from "@/lib/format";
+import { userLabel, shortId } from "@/lib/utils";
 import type { AuditEvent } from "@/types";
 import { toast } from "sonner";
 
 export default function AuditLogPage() {
   const { data: events, isLoading, isError, error, refetch, isFetching } = useAuditLog();
+  const { data: users } = useUsers();
   const [q, setQ] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -35,8 +37,9 @@ export default function AuditLogPage() {
     actorEmail: e.actorEmail ?? "",
     actorName:
       e.actorName ??
-      // Use the last 6 chars of the user id as a short tag; better than blank.
-      (e.actorUserId ? `user/${String(e.actorUserId).slice(-6)}` : "system"),
+      // Resolve the actor's user id to their display name; falls back to a
+      // short tag like `user/2p939m` when the user list hasn't loaded.
+      userLabel(e.actorUserId, users),
     diff: e.diff,
     ip: e.ip ?? e.ipAddress ?? null,
     userAgent: e.userAgent ?? null,
@@ -176,6 +179,7 @@ export default function AuditLogPage() {
                 <TimelineRow
                   key={e.id}
                   ev={e}
+                  users={users as any[] | undefined}
                   isOpen={openId === e.id}
                   onToggle={() => setOpenId(openId === e.id ? null : e.id)}
                 />
@@ -188,7 +192,21 @@ export default function AuditLogPage() {
   );
 }
 
-function TimelineRow({ ev, isOpen, onToggle }: { ev: AuditEvent; isOpen: boolean; onToggle: () => void }) {
+function TimelineRow({
+  ev, isOpen, onToggle, users,
+}: {
+  ev: AuditEvent;
+  isOpen: boolean;
+  onToggle: () => void;
+  users?: any[];
+}) {
+  // For User-typed entities the entityId is itself a user cuid — resolve it.
+  // For everything else, render a short tag like `Document / abc123`.
+  const targetLabel =
+    ev.entityName ??
+    (ev.entityType === "User"
+      ? userLabel(ev.entityId, users)
+      : shortId(ev.entityId, ev.entityType?.toLowerCase() ?? "entity"));
   return (
     <div>
       <button
@@ -211,7 +229,7 @@ function TimelineRow({ ev, isOpen, onToggle }: { ev: AuditEvent; isOpen: boolean
           <span className="font-medium text-slate-900">{ev.actorName}</span>
           <Badge variant="outline" size="sm" className="mx-1.5 font-mono">{ev.action}</Badge>
           <span className="text-slate-500">
-            {ev.entityType}: <span className="font-medium text-slate-900">{ev.entityName ?? ev.entityId}</span>
+            {ev.entityType}: <span className="font-medium text-slate-900">{targetLabel}</span>
           </span>
         </div>
         <span className="text-xs text-slate-400">{formatRelative(ev.at)}</span>
