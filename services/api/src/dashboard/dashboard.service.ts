@@ -192,9 +192,21 @@ export class DashboardService {
   private computeScope2(
     events: Array<{ canonicalKey: string; value: Decimal }>,
   ): Decimal {
+    // Sum only the GHG output series (already in tCO2e). When the calc
+    // worker has run, ghg_scope2_location and ghg_scope1_* rows exist
+    // and represent the authoritative emissions for the period; adding
+    // raw purchased_electricity_kwh × factor would double-count the
+    // same kWh.
+    //
+    // When the calc has NOT run for the period, fall back to the raw-
+    // input conversion so the dashboard isn't empty just because the
+    // customer hasn't kicked off a calc yet.
+    const hasComputedGhg = events.some((ev) => this.isComputedGhg(ev.canonicalKey));
     let total = new Decimal(0);
     for (const ev of events) {
-      if (this.isEnergyOrGhg(ev.canonicalKey)) {
+      if (this.isComputedGhg(ev.canonicalKey)) {
+        total = total.plus(ev.value);
+      } else if (!hasComputedGhg && this.isRawEnergyInput(ev.canonicalKey)) {
         total = total.plus(this.toTco2e(ev.canonicalKey, ev.value));
       }
     }
@@ -202,13 +214,34 @@ export class DashboardService {
   }
 
   private isEnergyOrGhg(key: string): boolean {
+    // Used by the monthly sparkline aggregation; keeps the historical
+    // "anything that could be an emissions signal" semantics. The
+    // headline total uses the stricter isComputedGhg+isRawEnergyInput
+    // split above to avoid double counting.
+    return this.isComputedGhg(key) || this.isRawEnergyInput(key);
+  }
+
+  /** True for canonical_keys that already carry a tCO2e value (output
+   *  of the calc engine — Scope 1 sub-categories, Scope 2 location/market,
+   *  any Scope 3 category, and the aggregate scope totals). */
+  private isComputedGhg(key: string): boolean {
     return (
-      key === 'purchased_electricity_kwh' ||
       key === 'ghg_scope1_total' ||
+      key === 'ghg_scope1_stationary' ||
+      key === 'ghg_scope1_mobile' ||
+      key === 'ghg_scope1_process' ||
+      key === 'ghg_scope1_fugitive' ||
       key === 'ghg_scope2_location' ||
       key === 'ghg_scope2_market' ||
       /^ghg_scope3_cat\d+$/.test(key)
     );
+  }
+
+  /** True for raw activity-data keys (kWh, L, kg) that need an emission
+   *  factor before they're a GHG number. Used only as the fallback path
+   *  when no calc has run for the period. */
+  private isRawEnergyInput(key: string): boolean {
+    return key === 'purchased_electricity_kwh';
   }
 
   private toTco2e(key: string, value: Decimal): Decimal {
