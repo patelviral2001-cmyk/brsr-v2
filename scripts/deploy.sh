@@ -4,9 +4,10 @@
 # Idempotent: safe to re-run after each `git pull`.
 #
 # Usage:
-#   ./scripts/deploy.sh                 # routine update
-#   SEED_DB=true ./scripts/deploy.sh    # first deploy (seed demo data)
-#   SKIP_BUILD=true ./scripts/deploy.sh # restart without rebuilding
+#   ./scripts/deploy.sh                              # routine update
+#   FRESH_DB=true SEED_DB=true ./scripts/deploy.sh   # destructive reset + reseed
+#   SEED_DB=true ./scripts/deploy.sh                 # first deploy (seed demo data)
+#   SKIP_BUILD=true ./scripts/deploy.sh              # restart without rebuilding
 # =====================================================================
 set -euo pipefail
 
@@ -86,11 +87,20 @@ done
 log "Initialising MinIO buckets (idempotent)"
 $COMPOSE run --rm minio-init
 
-# --- 6. Run database migrations -------------------------------------
-log "Running Prisma migrations"
-$COMPOSE run --rm \
-  -e RUN_MIGRATIONS=false \
-  api npx prisma migrate deploy
+# --- 6. Apply database schema ---------------------------------------
+# FRESH_DB=true       -> destructively reset DB and push current schema (first deploy / Phase 0+1 cutover)
+# (default)           -> prisma migrate deploy (requires checked-in migrations)
+if [[ "${FRESH_DB:-false}" == "true" ]]; then
+  warn "FRESH_DB=true -> destructively resetting DB and pushing schema (all data wiped)"
+  $COMPOSE run --rm \
+    -e RUN_MIGRATIONS=false \
+    api npx prisma db push --accept-data-loss --force-reset --skip-generate
+else
+  log "Running Prisma migrations"
+  $COMPOSE run --rm \
+    -e RUN_MIGRATIONS=false \
+    api npx prisma migrate deploy
+fi
 
 # --- 7. Optional seed (first deploy only) ---------------------------
 if [[ "${SEED_DB:-false}" == "true" ]]; then
