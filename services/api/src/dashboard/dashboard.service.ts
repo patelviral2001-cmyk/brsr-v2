@@ -51,11 +51,17 @@ export class DashboardService {
       : new Decimal(0);
 
     // Sparkline = monthly tCO2e across the active FY (12 buckets, Apr→Mar).
+    // Same double-count guard as computeScope2: if the calc engine has
+    // emitted computed-GHG rows for the period, only sum those; otherwise
+    // fall back to the raw-input conversion.
     const monthly = new Map<string, Decimal>();
+    const hasComputedGhg = thisFyEvents.some((ev) => this.isComputedGhg(ev.canonicalKey));
     for (const ev of thisFyEvents) {
-      if (!this.isEnergyOrGhg(ev.canonicalKey)) continue;
+      const useComputed = this.isComputedGhg(ev.canonicalKey);
+      const useRaw = !hasComputedGhg && this.isRawEnergyInput(ev.canonicalKey);
+      if (!useComputed && !useRaw) continue;
       const ym = ev.periodEnd.toISOString().slice(0, 7);
-      const tco2e = this.toTco2e(ev.canonicalKey, ev.value);
+      const tco2e = useComputed ? ev.value : this.toTco2e(ev.canonicalKey, ev.value);
       monthly.set(ym, (monthly.get(ym) ?? new Decimal(0)).plus(tco2e));
     }
     const sparkline = this.fySparkline(monthly, periodStart);
