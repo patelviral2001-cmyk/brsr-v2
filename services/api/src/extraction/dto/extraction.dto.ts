@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { Allow, ArrayMaxSize, ArrayMinSize, IsArray, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export enum ExtractionFieldStatus {
   DRAFT = 'DRAFT',
@@ -10,7 +10,13 @@ export enum ExtractionFieldStatus {
 }
 
 export class UpdateExtractionFieldDto {
+  // The corrected value can be number | string | object (table cell, JSON),
+  // so we can't narrow the type. @Allow keeps the property whitelisted
+  // through the global ValidationPipe (whitelist + forbidNonWhitelisted) —
+  // without it, the value would be silently stripped and the PATCH would
+  // 400 with "property value should not exist".
   @ApiProperty({ description: 'Reviewer-corrected value' })
+  @Allow()
   value!: unknown;
 
   @ApiPropertyOptional()
