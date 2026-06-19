@@ -239,6 +239,7 @@ services:
       COPILOT_URL: ${COPILOT_URL:-http://localhost:8101}
       OPA_URL: ${OPA_URL:-http://localhost:8181}
       OPA_ENABLED: ${OPA_ENABLED:-false}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
     volumes:
       - ./data/uploads:/app/data/uploads
     expose:

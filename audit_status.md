@@ -9,7 +9,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 1. Environment ✓ CLOSED
 - [x] 2. Database ✓ CLOSED
 - [x] 3. Authentication ✓ CLOSED
-- [ ] 4. Upload
+- [x] 4. Upload ✓ CLOSED
 - [ ] 5. Storage
 - [ ] 6. Extraction
 - [ ] 7. Evidence
@@ -28,11 +28,44 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 3
+Working: 4
 Broken: 0
 Missing: 0
-Fixed: 7
-Pending: 14
+Fixed: 9
+Pending: 13
+
+---
+
+## MODULE 4 — UPLOAD  ✓ CLOSED
+
+**Verified (positive):**
+- `POST /files/upload` with valid PDF (sha256=fa147f0e…) → HTTP 201, doc id `cmqkrpqa40007k5gm576c6ase`, s3Key `t/{tenantId}/2026-06-19/{uuid}.pdf`
+- Object actually present on MinIO disk (`/data/brsr-evidence/.../4a551384-…pdf/`)
+- Dedup by content hash: re-uploading the same file returned the SAME id (sha256 match, second insert skipped)
+- Missing file → HTTP 400 `No file provided`
+- Wrong MIME (`text/plain`) → HTTP 400 `Unsupported file. Got mime 'text/plain'… Allowed: PDF, XLSX, XLS, CSV, PNG, JPG.`
+- 50 MB size cap declared at `FileInterceptor` level + double-checked in service (line 92–94)
+- `GET /files` and `GET /files/:id` scope by `user.tenantId` (live response had `tenantId=cmqhxlufj0000o01b8is3avj0` matching the JWT)
+- Bogus doc id → 404 `Document not found` (no leak across tenants)
+- AI engine dispatched automatically on upload — doc transitioned PENDING → CLASSIFIED → REVIEW_NEEDED (confidence 0 for our toy PDF, which is correct)
+- `GET /files/:id/download` (Bearer) streams a byte-perfect copy: 537 bytes, sha256 matches uploaded content
+
+**Issues found:**
+1. **🔴 `/files/:id/signed-url` returned an unreachable URL.** The endpoint produced an AWS-presigned URL whose host was `http://minio:9000` — the internal docker hostname. Browsers cannot resolve `minio:9000`, so the extraction preview pane (which loads PDFs via `<iframe src={signedUrl}>`) was silently broken.
+
+**Fixed:**
+1. Removed the presigned-S3 path. Introduced `signFileAccessToken(docId, tenantId, exp)` — HMAC-SHA256 over `(docId, tenantId, exp)` keyed by `INTERNAL_CALLBACK_SECRET`, returned as `<exp>.<base64url-sig>`. `verifyFileAccessToken` uses `timingSafeEqual` to avoid signature-timing leaks.
+2. New public route `GET /files/:id/view?access=<token>` (`@Public()`) — verifies the HMAC, looks up the doc, streams the bytes through the API process. Token is bound to `(docId, tenantId)` so it cannot be replayed against a different document.
+3. `GET /files/:id/signed-url` now returns `${PUBLIC_BASE_URL}/api/v1/v1/files/:id/view?access=<token>` — absolute, browser-reachable, iframe-safe.
+4. Wired `PUBLIC_BASE_URL` into `docker-compose.prod.yml` and `.env.example`; set to `https://srv1763596.hstgr.cloud` on the VPS.
+
+**Re-verified after fix:**
+- `GET /signed-url` (Bearer) → returns absolute `https://srv1763596.hstgr.cloud/api/v1/v1/files/.../view?access=…`
+- `GET /view?access=<valid>` WITHOUT any Authorization header → HTTP 200, 537 bytes, sha256 matches upload
+- `GET /view?access=<tampered last char>` → HTTP 401 `Invalid or expired access token`
+- `GET /other-doc-id/view?access=<token-for-original>` → HTTP 404 `Document not found` (cross-doc replay blocked at the lookup step)
+- `GET /view` (no `?access=`) → HTTP 401 `Missing access token`
+- `GET /download` (no Bearer) → HTTP 401 unchanged (no public bypass introduced)
 
 ---
 
