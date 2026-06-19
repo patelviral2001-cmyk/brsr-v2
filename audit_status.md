@@ -15,7 +15,7 @@ Rule: every line below is backed by a captured command output. No assumptions.
 - [x] 7. Evidence ✓ CLOSED
 - [x] 8. Metrics ✓ CLOSED
 - [x] 9. Calculations ✓ CLOSED
-- [ ] 10. Disclosures
+- [x] 10. Disclosures ✓ CLOSED
 - [ ] 11. Dashboard
 - [ ] 12. API Layer
 - [ ] 13. Frontend Pages
@@ -28,11 +28,47 @@ Rule: every line below is backed by a captured command output. No assumptions.
 
 ## SCORECARD
 
-Working: 9
+Working: 10
 Broken: 0
 Missing: 1
-Fixed: 15
-Pending: 8
+Fixed: 17
+Pending: 7
+
+---
+
+## MODULE 10 — DISCLOSURES  ✓ CLOSED
+
+**Verified (positive):**
+- `GET /brsr/sections?fy=FY24-25` → 200 with 9 BRSR principles, each carrying its question list and answer-type metadata.
+- `POST /brsr/generate` (admin, has `report.generate`) → 201; persists `report` row with `status=DRAFT`, `reportData` containing `{scopeNodeIds, requestedFormats}`, `generated_by=<admin id>`.
+- BullMQ `brsr-report` queue enqueues one job per requested format.
+- XLSX worker writes a valid Excel file (size 7519 bytes, magic `50 4b 03 04`, 9 Principle sheets + Audit Trail + Meta sheets).
+- After both PDF and XLSX land, the report row auto-transitions `DRAFT → IN_REVIEW`.
+- `report.generate` permission enforced — admin succeeded only after admin's role was patched up to the dot-form perm list (originally seeded by `seed-minimal.ts` which omitted `report.generate`).
+- HMAC `/view` route accepts a token bound to (reportId, tenantId, format, exp).
+
+**Issues found:**
+1. **🔴 PDF generation crashed silently on every report request.** BullMQ failed-job inspection: `Error: switchToPage(0) out of bounds, current buffer covers pages 1 to 1` at `brsr-report.processor.ts:149` after 3 retries. Root cause: `new PDFDocument(...)` was missing `bufferPages: true`, so the footer-stamp loop (`bufferedPageRange()` + `switchToPage(i)`) couldn't seek back to earlier pages. Customer saw the report row stuck with `xlsxS3` populated but `pdfS3` null — no error in the UI.
+2. **🔴 `GET /reports/:id/{pdf|xlsx|xbrl}` returned an unreachable presigned URL** (same `minio:9000` bug class as Module 4 files). Browser fetches the URL → DNS failure. Customer's "Download BRSR" button silently failed.
+3. **🟡 Admin role in DB had only 47 dot-form perms, missing `report.generate` + 14 others** the Module 3 seed update added. The dot-form `seed-minimal.ts` (used by the demo bootstrap) hadn't been re-run after seed.ts changes, so admin's role row was stale. Patched in place via `UPDATE role SET permissions = ARRAY[…62 perms…] WHERE name='GROUP_ADMIN'` — same set as the Module 3 seed update.
+
+**Fixed:**
+1. Added `bufferPages: true` to `new PDFDocument(...)` in `services/api/src/brsr/brsr-report.processor.ts`.
+2. Added HMAC-signed `/reports/:id/view?format=X&access=<token>` route (`@Public`), with `signReportAccessToken` / `verifyReportAccessToken` helpers (timingSafeEqual). `/reports/:id/{pdf|xlsx|xbrl}` now returns the public-base `/view` URL instead of presigning S3.
+3. Patched admin's role row to the 62-perm dot-form set so the customer's admin account can actually invoke `report.generate`, `audit.export`, `metric.lock`, etc.
+
+**Re-verified after fix:**
+- Generate a fresh report → both `pdf_s3` and `xlsx_s3` populate within 25 s; report transitions DRAFT → IN_REVIEW.
+- BullMQ failed queue is clear; PDF job completes on first attempt.
+- `GET /reports/:id/pdf` → 200 with absolute `https://srv1763596.hstgr.cloud/api/v1/v1/reports/.../view?format=pdf&access=…`.
+- Fetch `/view?format=pdf&access=…` WITHOUT any Authorization header → HTTP 200, 2886 bytes, magic `%PDF` (verified `data[:4] == b'%PDF'`).
+- Tampered access token → 401 `Invalid or expired access token`.
+- Token issued for XLSX, replayed against `?format=pdf` → 401 (format-binding holds).
+- Token replay against another reportId → 404 `Report not found`.
+
+**Deferred:**
+- Scope 3 by-category calc still has no formulas (carry-over from Module 9). Out-of-band — the BRSR mandatory KPI set varies by industry and the customer hasn't supplied the category breakdown yet.
+- XBRL generator is still a placeholder stub in `buildXbrlStub()`. Real XBRL via Arelle was scoped to the separate `services/xbrl/` repo and is not on the current production path.
 
 ---
 
