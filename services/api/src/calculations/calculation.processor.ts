@@ -79,14 +79,22 @@ export class CalculationProcessor extends WorkerHost {
           requestedOutputKeys.length === 0) &&
         !formulas.some((f) => f.outputKey === 'ghg_scope2_location');
       if (needScope2Loc) {
+        // Journey trace failure #3: the AI engine emits either
+        // `purchased_electricity_kwh` OR `electricity_from_grid_kwh` for
+        // the same physical kWh reading (two synonymous keys in the AI
+        // registry). The built-in scope 2 formula previously only knew
+        // the first key, so an approved-but-grid-key metric flowed
+        // through doc -> extraction -> metric_event and then died
+        // silently with calc_run.formula_version_id='none'. Sum both
+        // input keys so either one drives the same emission.
         formulas.push({
           id: 'builtin:scope2_location_from_electricity',
           outputKey: 'ghg_scope2_location',
           // India CEA v18 grid factor (FY23-24): 0.716 kgCO2e/kWh
           // → 7.16e-4 tCO2e/kWh.
-          expression: 'purchased_electricity_kwh * 0.000716',
+          expression: '(purchased_electricity_kwh + electricity_from_grid_kwh) * 0.000716',
           unit: 'tCO2e',
-          inputs: ['purchased_electricity_kwh'],
+          inputs: ['purchased_electricity_kwh', 'electricity_from_grid_kwh'],
           version: 'builtin-v1',
         });
       }
@@ -140,11 +148,20 @@ export class CalculationProcessor extends WorkerHost {
         select: { canonicalKey: true, value: true, unit: true },
       });
       const metricCtx: Record<string, CelValue> = {};
+      // Journey trace failure #3 (cont'd): the CEL evaluator throws
+      // `Unresolved reference` on missing identifiers, so a formula like
+      // `(purchased_electricity_kwh + electricity_from_grid_kwh) * 0.000716`
+      // crashes whenever ONLY one of the synonymous keys has data. Pre-
+      // populate every required input with a zero default so the formula
+      // can sum cleanly. Real values overwrite below.
+      for (const k of requiredKeys) {
+        metricCtx[k] = { value: new Decimal(0), unit: '' };
+      }
       // Aggregate equal-keyed values by summing.
       // CRITICAL: refuse to mix units silently — kWh + MWh would corrupt totals.
       for (const m of inputs) {
         const k = m.canonicalKey;
-        if (!metricCtx[k]) {
+        if (!metricCtx[k] || (metricCtx[k]!.value as Decimal).isZero()) {
           metricCtx[k] = { value: new Decimal(0), unit: m.unit };
         } else if (metricCtx[k]!.unit !== m.unit) {
           throw new Error(
