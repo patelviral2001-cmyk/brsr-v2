@@ -39,12 +39,18 @@ async function bootstrap(): Promise<void> {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'none'"],
-          frameAncestors: ["'none'"],
+          // 'self' so the Evidence Review screen can iframe /evidence/:id/view
+          // (PDF stream) on the same origin. Cross-origin embedding stays blocked.
+          frameAncestors: ["'self'"],
           baseUri: ["'none'"],
         },
       },
+      // The default DENY blocks the same-origin PDF iframe used in Evidence Review.
+      // SAMEORIGIN keeps clickjacking protection while allowing our own framer.
+      frameguard: { action: 'sameorigin' },
       crossOriginEmbedderPolicy: false,
-      crossOriginResourcePolicy: { policy: 'same-site' },
+      // Same-origin (not same-site) lets the iframe in the SPA fetch the PDF bytes.
+      crossOriginResourcePolicy: { policy: 'same-origin' },
     }),
   );
 

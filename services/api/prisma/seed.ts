@@ -166,12 +166,12 @@ async function seedDemoTenant() {
   const smRole = await prisma.role.upsert({
     where: { tenantId_name: { tenantId: tenant.id, name: 'SUSTAINABILITY_MANAGER' } },
     update: {
-      permissions: ['site.read', 'evidence.read', 'evidence.upload', 'evidence.review', 'datapoint.read', 'datapoint.write', 'datapoint.confirm', 'kpi.read', 'report.read', 'audit.read'],
+      permissions: ['site.read', 'site.write', 'evidence.read', 'evidence.upload', 'evidence.review', 'datapoint.read', 'datapoint.write', 'datapoint.confirm', 'kpi.read', 'report.read', 'audit.read'],
       isSystem: true,
     },
     create: {
       tenantId: tenant.id, name: 'SUSTAINABILITY_MANAGER', isSystem: true, description: 'Sustainability Manager',
-      permissions: ['site.read', 'evidence.read', 'evidence.upload', 'evidence.review', 'datapoint.read', 'datapoint.write', 'datapoint.confirm', 'kpi.read', 'report.read', 'audit.read'],
+      permissions: ['site.read', 'site.write', 'evidence.read', 'evidence.upload', 'evidence.review', 'datapoint.read', 'datapoint.write', 'datapoint.confirm', 'kpi.read', 'report.read', 'audit.read'],
     },
   });
 

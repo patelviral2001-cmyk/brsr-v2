@@ -41,14 +41,27 @@ export class ExtractionService {
       return { ok: true };
     }
 
+    // Strip NULL bytes — pdfplumber + Tesseract OCR occasionally emit \x00
+    // which PostgreSQL UTF-8 columns reject (error 22021). Sanitize across
+    // all string fields and any string values in the JSON payload.
+    const sanitize = (v: unknown): unknown => {
+      if (typeof v === 'string') return v.split(String.fromCharCode(0)).join('');
+      if (Array.isArray(v)) return v.map(sanitize);
+      if (v && typeof v === 'object') {
+        const out: Record<string, unknown> = {};
+        for (const [k, val] of Object.entries(v)) out[k] = sanitize(val);
+        return out;
+      }
+      return v;
+    };
     await this.prisma.extractionResult.create({
       data: {
         tenantId: dto.tenantId,
         evidenceId: ev.id,
         schemaCode: dto.schemaCode || 'UNKNOWN_V1',
-        payload: (dto.payload ?? {}) as object,
+        payload: (sanitize(dto.payload ?? {}) as object),
         confidence: dto.confidence ?? 0,
-        rawText: dto.rawText,
+        rawText: dto.rawText?.split(String.fromCharCode(0)).join(''),
         status: 'READY',
       },
     });
