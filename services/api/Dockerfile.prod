@@ -42,6 +42,12 @@ if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   echo ">>> Migrations complete."
 fi
 
+# When `docker compose run api <cmd>` passes a command, run it instead of
+# starting the API (e.g. `prisma db push`, `tsx prisma/seed.ts`).
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
 echo ">>> Starting THE ESG API on :${PORT:-4000}"
 exec npx ts-node --transpile-only -r tsconfig-paths/register src/main.ts
 EOF

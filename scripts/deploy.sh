@@ -92,20 +92,21 @@ $COMPOSE run --rm minio-init
 # (default)           -> prisma migrate deploy (requires checked-in migrations)
 if [[ "${FRESH_DB:-false}" == "true" ]]; then
   warn "FRESH_DB=true -> destructively resetting DB and pushing schema (all data wiped)"
-  $COMPOSE run --rm \
+  $COMPOSE run --rm --entrypoint='/bin/sh' \
     -e RUN_MIGRATIONS=false \
-    api npx prisma db push --accept-data-loss --force-reset --skip-generate
+    api -c 'npx prisma db push --accept-data-loss --force-reset --skip-generate'
 else
   log "Running Prisma migrations"
-  $COMPOSE run --rm \
+  $COMPOSE run --rm --entrypoint='/bin/sh' \
     -e RUN_MIGRATIONS=false \
-    api npx prisma migrate deploy
+    api -c 'npx prisma migrate deploy'
 fi
 
 # --- 7. Optional seed (first deploy only) ---------------------------
 if [[ "${SEED_DB:-false}" == "true" ]]; then
   log "SEED_DB=true -> running prisma seed"
-  $COMPOSE run --rm api npm run prisma:seed || warn "Seed failed (already seeded?)"
+  $COMPOSE run --rm --entrypoint='/bin/sh' api -c 'npx tsx prisma/seed.ts' \
+    || warn "Seed failed (already seeded?)"
 fi
 
 # --- 8. Start application tier --------------------------------------
