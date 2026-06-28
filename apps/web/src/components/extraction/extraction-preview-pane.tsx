@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, X, RefreshCw, FileText, Loader2, Save } from "lucide-react";
 import { ConfidenceBreakdownPopover } from "./confidence-breakdown-popover";
-import { useFile } from "@/lib/api/queries";
+import { apiClient } from "@/lib/api/client";
 import type { ExtractedField } from "@/types";
 
 interface ExtractionPreviewPaneProps {
@@ -40,11 +40,34 @@ export function ExtractionPreviewPane({
     setReason("");
   }, [field.id]);
 
-  // The backend includes the signed URL on the file detail.
-  const { data: file } = useFile(field.fileId);
-  const previewUrl = file?.signedUrl;
-  const isImage = previewUrl && /\.(png|jpe?g|webp)$/i.test(previewUrl);
-  const isPdf = previewUrl && /\.pdf(\?|$)/i.test(previewUrl);
+  // Fetch the original document through the auth'd API (/files/:id/download)
+  // as a blob — the MinIO presigned URL uses an internal host the browser
+  // can't reach, and the iframe can't send a bearer header, so we proxy it
+  // into an object URL here.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!field.fileId) {
+      setPreviewUrl(null);
+      return;
+    }
+    let obj: string | null = null;
+    let cancelled = false;
+    apiClient
+      .get(`/files/${field.fileId}/download`, { responseType: "blob" })
+      .then((r) => {
+        if (cancelled) return;
+        obj = URL.createObjectURL(r.data as Blob);
+        setPreviewUrl(obj);
+      })
+      .catch(() => setPreviewUrl(null));
+    return () => {
+      cancelled = true;
+      if (obj) URL.revokeObjectURL(obj);
+    };
+  }, [field.fileId]);
+  const name = field.fileName ?? "";
+  const isImage = /\.(png|jpe?g|webp)$/i.test(name);
+  const isPdf = /\.pdf$/i.test(name) || (!isImage && !!previewUrl);
 
   const dirty = value !== String(field.value);
 

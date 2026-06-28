@@ -30,6 +30,43 @@ _UNIT_TOKENS = ["kvah", "kwh", "kva", "kw", "scm", "mmbtu", "litre", "ltr",
 _NEGATIVE_CODES = {"rebate", "subsidy"}            # always reduce the bill
 _NUM = re.compile(r"-?\d[\d,]*\.?\d*")
 
+# ── plausibility calibration (generic, no per-DISCOM logic) ───────────────────
+# Dense bill layouts make the line/colon harvester pair a label with a wrong
+# adjacent cell (e.g. due_date=107132, power_factor=18, meter_number=7.85).
+# Reject values whose TYPE/RANGE can't match the field, so a confidently-wrong
+# value never reaches the reviewer; the field is simply left for LLM/Document AI
+# or manual entry.
+_DATE_LABELS = {"due_date", "bill_date", "connection_date", "bill_month",
+                "billing_period_start", "billing_period_end"}
+_DATE_RE = re.compile(
+    r"\d{1,2}[-/.][A-Za-z0-9]{2,9}[-/.]\d{2,4}|\d{4}-\d{2}-\d{2}|[A-Za-z]{3,9}[-/ ]?\d{2,4}")
+
+
+def _plausible(label: str, value) -> bool:
+    if value is None:
+        return False
+    s = str(value).strip()
+    if not s:
+        return False
+    if label in _DATE_LABELS:
+        return bool(_DATE_RE.search(s))
+    if label == "power_factor":
+        try:
+            return 0.0 <= float(s.replace(",", "")) <= 1.2
+        except ValueError:
+            return False
+    if label == "meter_number":
+        if re.fullmatch(r"-?\d+\.\d+", s):     # a small decimal isn't a meter id
+            return False
+        return len(re.sub(r"\s", "", s)) >= 4
+    if label in ("maximum_demand", "billed_demand", "sanctioned_load"):
+        try:
+            v = float(s.replace(",", "").split()[0])
+            return 0 <= v < 1_000_000
+        except (ValueError, IndexError):
+            return False
+    return True
+
 
 def _clean_value(raw: str) -> str:
     """Strip OCR/Form-Parser noise around a value: leading ':;|*★', collapse
@@ -148,6 +185,9 @@ def map_layout(layout, doc_type: str, resolver: CanonicalDictionary,
             value, unit = cleaned, None
         else:
             value, unit = _parse_value(cleaned)
+        # calibration: drop type/range-implausible pairings (dense-layout bleed)
+        if res.kind not in ("charge", "flow") and not _plausible(res.canonical_label, value):
+            continue
         # confidence blends OCR/value reliability (dominant) with label-match
         # certainty: a clean native value with an exact alias → ~1.0; with a
         # strong containment match → ~0.95. Avoids penalizing perfect text.

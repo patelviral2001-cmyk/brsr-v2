@@ -50,6 +50,8 @@ export class ExtractionService {
     if (!f) return f;
     return {
       ...f,
+      fileId: f.documentId,
+      fieldKey: f.canonicalKey,
       fieldLabel: f.canonicalKey,
       fileName: f.document?.originalName ?? null,
       value: f.valueText ?? (f.valueNum != null ? Number(f.valueNum) : null),

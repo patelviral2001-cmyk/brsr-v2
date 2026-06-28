@@ -304,7 +304,42 @@ export class FilesService {
       include: { extractionFields: true },
     });
     if (!doc) throw new NotFoundException('Document not found');
-    return doc;
+    let signedUrl: string | undefined;
+    try {
+      signedUrl = await this.s3.presignGet(doc.s3Bucket, doc.s3Key, 600);
+    } catch {
+      /* preview is best-effort */
+    }
+    return {
+      ...doc,
+      signedUrl,
+      extractions: (doc.extractionFields ?? []).map((f: any) => this.fieldToClient(f, doc)),
+    };
+  }
+
+  // Reviewer-facing fields for a single document (web reads
+  // fileName/value/confidence/fileId, DB stores originalName/valueText|valueNum/...).
+  async extractions(tenantId: string, id: string) {
+    const doc = await (this.prisma as any).document.findFirst({
+      where: { id, tenantId },
+      include: { extractionFields: true },
+    });
+    if (!doc) throw new NotFoundException('Document not found');
+    return (doc.extractionFields ?? []).map((f: any) => this.fieldToClient(f, doc));
+  }
+
+  private fieldToClient(f: any, doc: any) {
+    return {
+      ...f,
+      fileId: f.documentId,
+      fieldKey: f.canonicalKey,
+      fieldLabel: f.canonicalKey,
+      fileName: doc?.originalName ?? null,
+      value: f.valueText ?? (f.valueNum != null ? Number(f.valueNum) : null),
+      confidence: f.confidenceComposite ?? 0,
+      unit: f.unitExtracted ?? null,
+      pageNumber: f.sourcePage ?? null,
+    };
   }
 
   async softDelete(tenantId: string, id: string, actorId: string) {

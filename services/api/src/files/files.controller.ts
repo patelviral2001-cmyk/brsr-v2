@@ -88,6 +88,11 @@ export class FilesController {
     return this.svc.findOne(user.tenantId, id);
   }
 
+  @Get(':id/extractions')
+  extractions(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseCuidPipe) id: string) {
+    return this.svc.extractions(user.tenantId, id);
+  }
+
   @Get(':id/signed-url')
   signedUrl(
     @CurrentUser() user: AuthenticatedUser,
