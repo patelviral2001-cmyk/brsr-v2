@@ -29,7 +29,7 @@ export class ExtractionService {
     const statusFilter = q.status
       ? { status: q.status as any }
       : { status: { in: ['NEEDS_REVIEW', 'DRAFT'] as string[] } };
-    return (this.prisma as any).extractionField.findMany({
+    const rows = await (this.prisma as any).extractionField.findMany({
       where: {
         tenantId,
         documentId: q.documentId,
@@ -39,6 +39,25 @@ export class ExtractionService {
       orderBy: [{ confidenceComposite: 'asc' }, { createdAt: 'asc' }],
       take,
     });
+    return rows.map((r: any) => this.toClientShape(r));
+  }
+
+  // The web (extraction-review) reads fileName / value / confidence / unit /
+  // fieldLabel; the DB stores document.originalName / valueText|valueNum /
+  // confidenceComposite / unitExtracted / canonicalKey. Map so the UI renders
+  // real values instead of "undefined / 0% / Unknown file".
+  private toClientShape(f: any) {
+    if (!f) return f;
+    return {
+      ...f,
+      fieldLabel: f.canonicalKey,
+      fileName: f.document?.originalName ?? null,
+      value: f.valueText ?? (f.valueNum != null ? Number(f.valueNum) : null),
+      confidence: f.confidenceComposite ?? 0,
+      unit: f.unitExtracted ?? null,
+      pageNumber: f.sourcePage ?? null,
+      evidenceText: f.rawText ?? null,
+    };
   }
 
   async getField(tenantId: string, id: string) {
@@ -48,7 +67,7 @@ export class ExtractionService {
     });
     if (!field) throw new NotFoundException('Field not found');
     const signedUrl = await this.s3.presignGet(field.document.s3Bucket, field.document.s3Key, 600);
-    return { ...field, sourcePreviewUrl: signedUrl };
+    return { ...this.toClientShape(field), sourcePreviewUrl: signedUrl };
   }
 
   async update(tenantId: string, id: string, dto: UpdateExtractionFieldDto, actorId: string) {

@@ -143,7 +143,9 @@ services:
       S3_BUCKET_EXTRACTS: brsr-extracts
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       CORS_ORIGIN: http://${VPS_IP}:3000
-      RUN_MIGRATIONS: "true"
+      # repo's prisma 01_init migration is broken (refs entity_node before create);
+      # schema is applied via `prisma db push` in DEPLOY_VPS.md instead.
+      RUN_MIGRATIONS: "false"
       KEYCLOAK_URL: http://localhost:8080
       KEYCLOAK_REALM: brsr
       KEYCLOAK_CLIENT_ID: brsr-api
