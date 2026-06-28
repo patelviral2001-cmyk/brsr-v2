@@ -1,0 +1,41 @@
+# cert-manager ClusterIssuer using Let's Encrypt via Route53 DNS-01.
+# Helm install of cert-manager itself is wired via ArgoCD application.
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: platform-ops@brsrai.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - selector:
+          dnsZones:
+            - brsrai.com
+        dns01:
+          route53:
+            region: ap-south-1
+            # cert-manager pod runs with IRSA role granted route53:ChangeResourceRecordSets
+            role: arn:aws:iam::111111111111:role/brsr-prod-cert-manager
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: platform-ops@brsrai.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - selector:
+          dnsZones:
+            - brsrai.com
+        dns01:
+          route53:
+            region: ap-south-1
+            role: arn:aws:iam::111111111111:role/brsr-prod-cert-manager

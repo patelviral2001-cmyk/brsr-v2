@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * BRSR design tokens.
+ *
+ * Values are space-separated HSL triplets so Tailwind's <alpha-value> syntax
+ * (hsl(var(--token) / <alpha-value>)) resolves correctly.
+ *
+ * Primary palette is "Imagine Powertree green" — teal-700 in light, teal-400 in
+ * dark, picked for accessible contrast against neutral surfaces.
+ */
+:root {
+  /* Imagine Powertree primary — teal-700 (#0F766E) */
+  --brsr-primary: 172 84% 26%;
+  --brsr-primary-fg: 0 0% 100%;
+
+  --brsr-bg: 0 0% 100%;
+  --brsr-fg: 222 47% 11%;
+
+  --brsr-muted: 210 40% 96%;
+  --brsr-muted-fg: 215 16% 47%;
+
+  --brsr-border: 214 32% 91%;
+  --brsr-ring: 172 84% 26%;
+
+  --brsr-success: 142 71% 32%;
+  --brsr-warning: 38 92% 50%;
+  --brsr-destructive: 0 72% 51%;
+
+  --brsr-radius: 0.5rem;
+
+  color-scheme: light;
+}
+
+.dark {
+  /* Imagine Powertree dark primary — teal-400 (#2DD4BF) */
+  --brsr-primary: 172 66% 50%;
+  --brsr-primary-fg: 172 84% 10%;
+
+  --brsr-bg: 222 47% 6%;
+  --brsr-fg: 210 40% 98%;
+
+  --brsr-muted: 217 33% 14%;
+  --brsr-muted-fg: 215 20% 65%;
+
+  --brsr-border: 217 33% 18%;
+  --brsr-ring: 172 66% 50%;
+
+  --brsr-success: 142 71% 45%;
+  --brsr-warning: 38 92% 55%;
+  --brsr-destructive: 0 72% 60%;
+
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}

@@ -1,0 +1,21 @@
+# UEDI ai-engine image — runs the slim app.main_uedi (Document AI / GPT-4o /
+# native-PDF), not the heavy langchain orchestrator.
+FROM python:3.11-slim AS runtime
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-uedi.txt /app/requirements-uedi.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /app/requirements-uedi.txt
+
+# vendored UEDI engine lives at the ai-engine root (packages/ services/) + app/
+COPY . /app
+
+EXPOSE 8100
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 --start-period=40s \
+    CMD curl -fsS http://localhost:8100/health || exit 1
+
+CMD ["uvicorn", "app.main_uedi:app", "--host", "0.0.0.0", "--port", "8100", \
+     "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]

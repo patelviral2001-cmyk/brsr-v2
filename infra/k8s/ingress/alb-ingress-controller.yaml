@@ -1,0 +1,40 @@
+# AWS Load Balancer Controller installed via Helm by ArgoCD.
+# This file contains the IngressClass + sample Ingress for the API.
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: alb
+spec:
+  controller: ingress.k8s.aws/alb
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: brsr-api
+  namespace: brsr-app
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
+    alb.ingress.kubernetes.io/success-codes: '200'
+    alb.ingress.kubernetes.io/load-balancer-attributes: routing.http2.enabled=true,idle_timeout.timeout_seconds=60,routing.http.drop_invalid_header_fields.enabled=true
+    alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:ap-south-1:111111111111:regional/webacl/brsr-prod-regional/REPLACE
+    alb.ingress.kubernetes.io/shield-advanced-protection: 'true'
+    external-dns.alpha.kubernetes.io/hostname: api.brsrai.com
+spec:
+  ingressClassName: alb
+  rules:
+    - host: api.brsrai.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80

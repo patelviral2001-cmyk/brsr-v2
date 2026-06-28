@@ -1,0 +1,1320 @@
+// =====================================================================
+// BRSR AI Platform v2 — Prisma schema
+// Multi-tenant ESG platform. Single Postgres schema (public).
+// Row-Level Security enforced at DB level (see 01_init/migration.sql).
+// =====================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "relationJoins"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, ltree, pg_trgm, citext, btree_gin]
+}
+
+// =====================================================================
+// ENUMS
+// =====================================================================
+
+enum TenantPlan {
+  COMPLIANCE
+  ENTERPRISE
+  GROUP
+  LISTED_PREMIUM
+}
+
+enum IsolationTier {
+  POOL
+  SILO
+  SINGLE
+}
+
+enum DataResidency {
+  IN
+  EU
+  US
+  APAC
+}
+
+enum IdpType {
+  OKTA
+  AZURE_AD
+  GOOGLE
+  SAML
+  OIDC
+  PASSWORD
+}
+
+enum EntityType {
+  GROUP
+  LEGAL_ENTITY
+  DIVISION
+  SITE
+  DEPARTMENT
+}
+
+enum ConsolidationMethod {
+  FULL
+  PROPORTIONAL
+  EQUITY
+  NOT_CONSOLIDATED
+}
+
+enum ControlType {
+  FINANCIAL
+  OPERATIONAL
+  EQUITY
+}
+
+enum OperationalBoundary {
+  FINANCIAL_CONTROL
+  OPERATIONAL_CONTROL
+  EQUITY_SHARE
+}
+
+enum Framework {
+  BRSR
+  BRSR_CORE
+  GRI
+  SASB
+  TCFD
+  IFRS_S1
+  IFRS_S2
+  CSRD_ESRS
+  CDP
+}
+
+enum MetricCategory {
+  ENVIRONMENT
+  SOCIAL
+  GOVERNANCE
+}
+
+enum AggregationRule {
+  SUM
+  WEIGHTED_AVG
+  LATEST
+  MIN
+  MAX
+  FIRST
+  COUNT
+}
+
+enum BoundaryTag {
+  SCOPE_1
+  SCOPE_2_LOCATION
+  SCOPE_2_MARKET
+  SCOPE_3_CAT_1
+  SCOPE_3_CAT_2
+  SCOPE_3_CAT_3
+  SCOPE_3_CAT_4
+  SCOPE_3_CAT_5
+  SCOPE_3_CAT_6
+  SCOPE_3_CAT_7
+  SCOPE_3_CAT_8
+  SCOPE_3_CAT_9
+  SCOPE_3_CAT_10
+  SCOPE_3_CAT_11
+  SCOPE_3_CAT_12
+  SCOPE_3_CAT_13
+  SCOPE_3_CAT_14
+  SCOPE_3_CAT_15
+  N_A
+}
+
+enum GwpBasis {
+  AR5
+  AR6_100Y
+  AR6_20Y
+}
+
+enum MetricStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWED
+  APPROVED
+  REJECTED
+  LOCKED
+}
+
+enum ConfidenceLevel {
+  LOW
+  MEDIUM
+  HIGH
+  VERIFIED
+}
+
+enum MetricSourceType {
+  EXTRACTION
+  MANUAL
+  CALCULATION
+  API
+}
+
+enum DocType {
+  UTILITY_BILL
+  FUEL_INVOICE
+  ELECTRICITY_BILL
+  WATER_BILL
+  WASTE_MANIFEST
+  HR_SHEET
+  PAYROLL
+  SAFETY_INCIDENT
+  AUDITED_FINANCIALS
+  GRI_INDEX
+  BRSR_DRAFT
+  POLICY_DOC
+  BOARD_MINUTES
+  CERTIFICATE
+  SUPPLIER_RESPONSE
+  EMISSIONS_INVENTORY
+  OTHER
+}
+
+enum DocStatus {
+  PENDING
+  UPLOADED
+  CLASSIFIED
+  EXTRACTED
+  EXTRACTION_FAILED
+  PARTIAL
+  NEEDS_REVIEW
+  REVIEW_NEEDED
+  APPROVED
+  REJECTED
+}
+
+enum ExtractionStatus {
+  DRAFT
+  NEEDS_REVIEW
+  AUTO_ACCEPTED
+  APPROVED
+  REJECTED
+  OVERRIDDEN
+}
+
+enum FactorSource {
+  DEFRA_2024
+  CEA_V18
+  IPCC_AR6
+  EXIOBASE
+  WIO
+  SECTOR_SPECIFIC
+  CUSTOM_TENANT
+}
+
+enum Gas {
+  CO2
+  CH4
+  N2O
+  HFC
+  PFC
+  SF6
+  NF3
+  MIXED
+}
+
+enum WorkflowScope {
+  METRIC
+  DOCUMENT
+  REPORT
+  SUPPLIER
+}
+
+enum WorkflowStatus {
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ApprovalActionType {
+  SUBMIT
+  APPROVE
+  REJECT
+  REQUEST_INFO
+  REASSIGN
+  COMMENT
+}
+
+enum AuditActionType {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  LOCK
+  UNLOCK
+  EXPORT
+  LOGIN
+  IMPERSONATE
+  SIGN
+  EXTRACT
+  OVERRIDE
+}
+
+enum SupplierStatus {
+  INVITED
+  ACTIVE
+  ENGAGED
+  RESPONDED
+  ARCHIVED
+}
+
+enum SupplierResponseStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum ReportFormat {
+  PDF
+  XLSX
+  XBRL
+  DOCX
+  HTML
+  JSON
+}
+
+enum ReportStatus {
+  DRAFT
+  GENERATING
+  GENERATED
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  FILED
+}
+
+enum AssuranceStatus {
+  ACTIVE
+  SUPERSEDED
+}
+
+enum CopilotMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+enum AuditExceptionSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AuditExceptionStatus {
+  OPEN
+  IN_REVIEW
+  RESPONDED
+  CLOSED
+}
+
+enum SbtiStatus {
+  DRAFT
+  COMMITTED
+  VALIDATED
+  ACHIEVED
+}
+
+enum SbtiScope {
+  S1
+  S2
+  S3
+  S1_S2
+  ALL
+}
+
+enum AbatementStatus {
+  PROPOSED
+  APPROVED
+  IMPLEMENTED
+  COMPLETED
+}
+
+enum CreditRegistry {
+  VERRA
+  GOLD_STANDARD
+  CAR
+  ART_TREES
+}
+
+enum StakeholderType {
+  INTERNAL
+  EXTERNAL
+}
+
+enum SurveyStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum DataSourceType {
+  UPLOAD
+  EMAIL_IN
+  SAP
+  ORACLE
+  WORKDAY
+  REST_API
+  IOT
+  MANUAL
+}
+
+// =====================================================================
+// TENANCY & IDENTITY
+// =====================================================================
+
+model Tenant {
+  id            String        @id @default(cuid())
+  name          String
+  slug          String        @unique
+  plan          TenantPlan
+  isolationTier IsolationTier @map("isolation_tier")
+  dataResidency DataResidency @map("data_residency")
+  brandColor    String?       @map("brand_color")
+  logoUrl       String?       @map("logo_url")
+  customDomain  String?       @unique @map("custom_domain")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  deletedAt     DateTime?     @map("deleted_at")
+
+  settings              TenantSetting[]
+  identityProviders     IdentityProvider[]
+  users                 User[]
+  roles                 Role[]
+  apiKeys               ApiKey[]
+  auditLogs             AuditLog[]
+  entityNodes           EntityNode[]
+  materialTopics        MaterialTopic[]
+  stakeholderGroups     StakeholderGroup[]
+  materialitySurveys    MaterialitySurvey[]
+  materialityRuns       MaterialityAssessmentRun[]
+  dataSources           DataSource[]
+  ingestEvents          IngestEvent[]
+  documents             Document[]
+  extractionFields      ExtractionField[]
+  emissionFactors       EmissionFactor[]
+  metricEvents          MetricEvent[]
+  calcRuns              CalcRun[]
+  approvalWorkflows     ApprovalWorkflow[]
+  workflowInstances     WorkflowInstance[]
+  assuranceSnapshots    AssuranceSnapshot[]
+  reports               Report[]
+  suppliers             Supplier[]
+  supplierQuestionnaires SupplierQuestionnaire[]
+  sbtiTargets           SbtiTarget[]
+  abatementProjects     AbatementProject[]
+  carbonCredits         CarbonCredit[]
+  copilotConversations  CopilotConversation[]
+
+  @@map("tenant")
+}
+
+model TenantSetting {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("tenant_setting")
+}
+
+model IdentityProvider {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  type      IdpType
+  config    Json
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("identity_provider")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  tenantId     String    @map("tenant_id")
+  idpSubject   String    @unique @map("idp_subject")
+  email        String
+  passwordHash String?   @map("password_hash")
+  firstName    String?   @map("first_name")
+  lastName     String?   @map("last_name")
+  locale       String    @default("en-IN")
+  timezone     String    @default("Asia/Kolkata")
+  mfaEnrolled  Boolean   @default(false) @map("mfa_enrolled")
+  lastLoginAt  DateTime? @map("last_login_at")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roleAssignments RoleAssignment[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("user")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  permissions String[]
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments RoleAssignment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("role")
+}
+
+model RoleAssignment {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  roleId      String    @map("role_id")
+  scopeNodeId String?   @map("scope_node_id")
+  grantedBy   String    @map("granted_by")
+  grantedAt   DateTime  @default(now()) @map("granted_at")
+  expiresAt   DateTime? @map("expires_at")
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  scopeNode EntityNode? @relation("RoleScopeNode", fields: [scopeNodeId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId, scopeNodeId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([scopeNodeId])
+  @@index([expiresAt])
+  @@map("role_assignment")
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  name       String
+  hashedKey  String    @unique @map("hashed_key")
+  scopes     Json
+  createdBy  String    @map("created_by")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  expiresAt  DateTime? @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([expiresAt])
+  @@map("api_key")
+}
+
+// PARTITION BY RANGE (created_at) — monthly
+model AuditLog {
+  id          String          @id @default(cuid())
+  tenantId    String          @map("tenant_id")
+  actorUserId String?         @map("actor_user_id")
+  entityType  String          @map("entity_type")
+  entityId    String          @map("entity_id")
+  action      AuditActionType
+  diff        Json
+  ipAddress   String?         @map("ip_address")
+  userAgent   String?         @map("user_agent")
+  requestId   String?         @map("request_id")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, actorUserId, createdAt(sort: Desc)])
+  @@index([tenantId, action, createdAt(sort: Desc)])
+  @@index([requestId])
+  @@map("audit_log")
+}
+
+// =====================================================================
+// HIERARCHY
+// =====================================================================
+
+model EntityNode {
+  id                  String              @id @default(cuid())
+  tenantId            String              @map("tenant_id")
+  parentId            String?             @map("parent_id")
+  // NOTE: declared as String? in Prisma; the 01_init migration ALTERs this
+  // column to real Postgres `ltree` type and adds a GiST index. Prisma's
+  // generated client treats it as a string at runtime, which is exactly
+  // what we want (paths are dot-separated labels).
+  ltreePath           String?             @map("ltree_path")
+  type                EntityType
+  name                String
+  code                String
+  consolidationMethod ConsolidationMethod @map("consolidation_method")
+  ownershipPct        Decimal             @default(100.0000) @map("ownership_pct") @db.Decimal(7, 4)
+  controlType         ControlType         @map("control_type")
+  operationalBoundary OperationalBoundary @map("operational_boundary")
+  sector              String?
+  isicCode            String?             @map("isic_code")
+  country             String
+  state               String?
+  city                String?
+  lat                 Decimal?            @db.Decimal(9, 6)
+  lng                 Decimal?            @db.Decimal(9, 6)
+  employeeCount       Int?                @map("employee_count")
+  revenue             Decimal?            @db.Decimal(38, 2)
+  currency            String?
+  effectiveFrom       DateTime            @map("effective_from")
+  effectiveTo         DateTime?           @map("effective_to")
+  metadata            Json                @default("{}")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent         EntityNode?      @relation("EntityHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children       EntityNode[]     @relation("EntityHierarchy")
+  documents      Document[]
+  roleAssignments RoleAssignment[] @relation("RoleScopeNode")
+  metricEvents   MetricEvent[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, parentId])
+  @@index([tenantId, type])
+  @@index([tenantId, country])
+  @@map("entity_node")
+}
+
+// =====================================================================
+// MATERIALITY
+// =====================================================================
+
+model MaterialTopic {
+  id              String         @id @default(cuid())
+  tenantId        String?        @map("tenant_id")
+  framework       Framework
+  code            String
+  name            String
+  description     String?
+  defaultCategory MetricCategory @map("default_category")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, framework, code])
+  @@index([tenantId])
+  @@map("material_topic")
+}
+
+model StakeholderGroup {
+  id              String          @id @default(cuid())
+  tenantId        String          @map("tenant_id")
+  name            String
+  type            StakeholderType
+  influenceScore  Int             @map("influence_score")
+  interestScore   Int             @map("interest_score")
+
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  surveyResponses   SurveyResponse[]
+
+  @@index([tenantId])
+  @@map("stakeholder_group")
+}
+
+model MaterialitySurvey {
+  id         String       @id @default(cuid())
+  tenantId   String       @map("tenant_id")
+  fy         String
+  title      String
+  status     SurveyStatus
+  launchedAt DateTime?    @map("launched_at")
+  closedAt   DateTime?    @map("closed_at")
+  createdBy  String       @map("created_by")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  responses SurveyResponse[]
+
+  @@unique([tenantId, fy, title])
+  @@index([tenantId, fy])
+  @@index([tenantId, status])
+  @@map("materiality_survey")
+}
+
+model SurveyResponse {
+  id                  String   @id @default(cuid())
+  surveyId            String   @map("survey_id")
+  respondentEmail     String   @map("respondent_email")
+  respondentRole      String?  @map("respondent_role")
+  stakeholderGroupId  String?  @map("stakeholder_group_id")
+  submittedAt         DateTime @map("submitted_at")
+  responses           Json
+
+  survey           MaterialitySurvey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  stakeholderGroup StakeholderGroup? @relation(fields: [stakeholderGroupId], references: [id], onDelete: SetNull)
+
+  @@unique([surveyId, respondentEmail])
+  @@index([surveyId])
+  @@index([stakeholderGroupId])
+  @@map("survey_response")
+}
+
+model MaterialityAssessmentRun {
+  id                  String    @id @default(cuid())
+  tenantId            String    @map("tenant_id")
+  fy                  String
+  matrixData          Json      @map("matrix_data")
+  priorityTopics      Json      @map("priority_topics")
+  boardSignedAt       DateTime? @map("board_signed_at")
+  signedByUserId      String?   @map("signed_by_user_id")
+  signatureEvidenceS3 String?   @map("signature_evidence_s3")
+  lockedAt            DateTime? @map("locked_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, fy])
+  @@index([tenantId, fy])
+  @@index([tenantId, lockedAt])
+  @@map("materiality_assessment_run")
+}
+
+// =====================================================================
+// DATA COLLECTION
+// =====================================================================
+
+model DataSource {
+  id        String         @id @default(cuid())
+  tenantId  String         @map("tenant_id")
+  name      String
+  type      DataSourceType
+  config    Json
+  isActive  Boolean        @default(true) @map("is_active")
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ingestEvents IngestEvent[]
+
+  @@index([tenantId])
+  @@map("data_source")
+}
+
+model IngestEvent {
+  id          String             @id @default(cuid())
+  tenantId    String             @map("tenant_id")
+  sourceId    String             @map("source_id")
+  externalId  String?            @map("external_id")
+  status      IngestEventStatus
+  payload     Json
+  createdAt   DateTime           @default(now()) @map("created_at")
+  completedAt DateTime?          @map("completed_at")
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source DataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([sourceId, createdAt(sort: Desc)])
+  @@index([externalId])
+  @@map("ingest_event")
+}
+
+enum IngestEventStatus {
+  RECEIVED
+  CLASSIFYING
+  EXTRACTING
+  VALIDATED
+  FAILED
+}
+
+model Document {
+  id                    String    @id @default(cuid())
+  tenantId              String    @map("tenant_id")
+  scopeNodeId           String    @map("scope_node_id")
+  s3Bucket              String    @map("s3_bucket")
+  s3Key                 String    @map("s3_key")
+  originalName          String    @map("original_name")
+  mimeType              String    @map("mime_type")
+  sizeBytes             BigInt    @map("size_bytes")
+  sha256                String
+  docType               DocType   @map("doc_type")
+  classifierConfidence  Float?    @map("classifier_confidence")
+  pageCount             Int?      @map("page_count")
+  language              String?
+  ocrApplied            Boolean   @default(false) @map("ocr_applied")
+  uploadedBy            String    @map("uploaded_by")
+  uploadedAt            DateTime  @default(now()) @map("uploaded_at")
+  status                DocStatus
+  tags                  String[]
+
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scopeNode        EntityNode        @relation(fields: [scopeNodeId], references: [id], onDelete: Restrict)
+  extractionFields ExtractionField[]
+
+  @@unique([tenantId, sha256])
+  @@index([tenantId, scopeNodeId, status])
+  @@index([tenantId, status, uploadedAt(sort: Desc)])
+  @@index([tenantId, uploadedAt(sort: Desc)])
+  @@index([tenantId, docType])
+  @@index([scopeNodeId])
+  @@map("document")
+}
+
+// =====================================================================
+// EXTRACTION
+// =====================================================================
+
+model ExtractionField {
+  id                   String           @id @default(cuid())
+  documentId           String           @map("document_id")
+  tenantId             String           @map("tenant_id")
+  canonicalKey         String           @map("canonical_key")
+  valueText            String?          @map("value_text")
+  valueNum             Decimal?         @map("value_num") @db.Decimal(38, 12)
+  unitExtracted        String?          @map("unit_extracted")
+  periodStart          DateTime?        @map("period_start")
+  periodEnd            DateTime?        @map("period_end")
+  dimensions           Json             @default("{}")
+  sourcePage           Int?             @map("source_page")
+  sourceBbox           Json?            @map("source_bbox")
+  sourceRow            Int?             @map("source_row")
+  sourceCell           String?          @map("source_cell")
+  rawText              String           @map("raw_text")
+  confidenceComponents Json             @map("confidence_components")
+  confidenceComposite  Float            @map("confidence_composite")
+  status               ExtractionStatus
+  reviewedBy           String?          @map("reviewed_by")
+  reviewedAt           DateTime?        @map("reviewed_at")
+  overrideReason       String?          @map("override_reason")
+  createdAt            DateTime         @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, canonicalKey, periodStart])
+  @@index([tenantId, status, confidenceComposite])
+  @@index([tenantId, status])
+  @@index([tenantId, reviewedAt(sort: Desc)])
+  @@index([documentId])
+  @@index([documentId, canonicalKey])
+  @@map("extraction_field")
+}
+
+// =====================================================================
+// METRIC REGISTRY
+// =====================================================================
+
+model CanonicalMetric {
+  key              String           @id
+  name             String
+  description      String?
+  canonicalUnit    String           @map("canonical_unit")
+  allowedUnits     String[]         @map("allowed_units")
+  category         MetricCategory
+  subcategory      String
+  dimensions       Json             @default("{}")
+  aggregationRule  AggregationRule  @map("aggregation_rule")
+  boundaryTag      BoundaryTag?     @map("boundary_tag")
+  gwpBasis         GwpBasis?        @map("gwp_basis")
+  dataQualityTier  Int?             @map("data_quality_tier")
+  version          Int              @default(1)
+  validFrom        DateTime         @map("valid_from")
+  validTo          DateTime?        @map("valid_to")
+  isActive         Boolean          @default(true) @map("is_active")
+
+  @@index([category, subcategory])
+  @@index([isActive])
+  @@map("canonical_metric")
+}
+
+model FrameworkMapping {
+  id                  String           @id @default(cuid())
+  framework           Framework
+  frameworkCode       String           @map("framework_code")
+  frameworkSection    String?          @map("framework_section")
+  version             String
+  canonicalKeys       String[]         @map("canonical_keys")
+  formula             Json?
+  aggregationOverride AggregationRule? @map("aggregation_override")
+  narrativeTemplate   String?          @map("narrative_template")
+  validFrom           DateTime         @map("valid_from")
+  validTo             DateTime?        @map("valid_to")
+
+  @@unique([framework, frameworkCode, version])
+  @@index([framework])
+  @@map("framework_mapping")
+}
+
+// =====================================================================
+// EMISSION FACTORS
+// =====================================================================
+
+model EmissionFactor {
+  id          String       @id @default(cuid())
+  source      FactorSource
+  tenantId    String?      @map("tenant_id")
+  category    String
+  subCategory String?      @map("sub_category")
+  activityType String      @map("activity_type")
+  region      String?
+  gas         Gas
+  value       Decimal      @db.Decimal(38, 12)
+  unit        String
+  gwpBasis    GwpBasis?    @map("gwp_basis")
+  citation    String
+  validFrom   DateTime     @map("valid_from")
+  validTo     DateTime?    @map("valid_to")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([source, activityType, region, validFrom])
+  @@index([source, activityType, region, gas, validFrom(sort: Desc)])
+  @@index([tenantId, validFrom])
+  @@index([validFrom, validTo])
+  @@map("emission_factor")
+}
+
+// =====================================================================
+// METRIC EVENTS
+// =====================================================================
+
+// PARTITION BY HASH(tenant_id) THEN RANGE(period_start)
+model MetricEvent {
+  id                  String            @id @default(cuid())
+  tenantId            String            @map("tenant_id")
+  scopeNodeId         String            @map("scope_node_id")
+  canonicalKey        String            @map("canonical_key")
+  periodStart         DateTime          @map("period_start")
+  periodEnd           DateTime          @map("period_end")
+  value               Decimal           @db.Decimal(38, 12)
+  unit                String
+  dimensions          Json              @default("{}")
+  sourceType          MetricSourceType  @map("source_type")
+  sourceExtractionId  String?           @map("source_extraction_id")
+  sourceCalcRunId     String?           @map("source_calc_run_id")
+  status              MetricStatus      @default(DRAFT)
+  assuranceSnapshotId String?           @map("assurance_snapshot_id")
+  dataQualityScore    Float?            @map("data_quality_score")
+  confidenceLevel     ConfidenceLevel?  @map("confidence_level")
+  submittedBy         String            @map("submitted_by")
+  submittedAt         DateTime          @default(now()) @map("submitted_at")
+  approvedBy          String?           @map("approved_by")
+  approvedAt          DateTime?         @map("approved_at")
+  comment             String?
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scopeNode EntityNode @relation(fields: [scopeNodeId], references: [id], onDelete: Restrict)
+
+  // NOTE: business-level dedup also requires `dimensions` JSON equality —
+  // enforced in code path + a raw expression-index in 02_constraints.sql.
+  @@index([tenantId, canonicalKey, periodStart])
+  @@index([tenantId, scopeNodeId, periodStart])
+  @@index([tenantId, scopeNodeId, canonicalKey, periodStart])
+  @@index([tenantId, status])
+  @@index([tenantId, status, periodStart(sort: Desc)])
+  @@index([tenantId, canonicalKey, periodEnd(sort: Desc)])
+  @@index([tenantId, periodStart, periodEnd])
+  @@index([assuranceSnapshotId])
+  @@index([sourceExtractionId])
+  @@index([sourceCalcRunId])
+  @@map("metric_event")
+}
+
+model CalcRun {
+  id                   String   @id @default(cuid())
+  tenantId             String   @map("tenant_id")
+  formulaVersionId     String   @map("formula_version_id")
+  outputCanonicalKey   String   @map("output_canonical_key")
+  outputValue          Decimal  @map("output_value") @db.Decimal(38, 12)
+  outputUnit           String   @map("output_unit")
+  inputMetricIds       String[] @map("input_metric_ids")
+  factorIds            String[] @map("factor_ids")
+  gwpBasis             GwpBasis? @map("gwp_basis")
+  scopeNodeIds         String[] @map("scope_node_ids")
+  periodStart          DateTime @map("period_start")
+  periodEnd            DateTime @map("period_end")
+  reproducibleSeed     String   @map("reproducible_seed")
+  computedAt           DateTime @default(now()) @map("computed_at")
+  computedBy           String   @map("computed_by")
+  durationMs           Int      @map("duration_ms")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, outputCanonicalKey, periodStart])
+  @@index([tenantId, computedAt(sort: Desc)])
+  @@index([formulaVersionId])
+  @@map("calc_run")
+}
+
+// =====================================================================
+// WORKFLOW
+// =====================================================================
+
+model ApprovalWorkflow {
+  id        String        @id @default(cuid())
+  tenantId  String        @map("tenant_id")
+  name      String
+  scope     WorkflowScope
+  config    Json
+  isDefault Boolean       @default(false) @map("is_default")
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  instances WorkflowInstance[]
+
+  @@unique([tenantId, scope, name])
+  @@index([tenantId])
+  @@map("approval_workflow")
+}
+
+model WorkflowInstance {
+  id           String         @id @default(cuid())
+  tenantId     String         @map("tenant_id")
+  workflowId   String         @map("workflow_id")
+  entityType   String         @map("entity_type")
+  entityId     String         @map("entity_id")
+  currentStep  Int            @default(0) @map("current_step")
+  status       WorkflowStatus @default(IN_PROGRESS)
+  startedAt    DateTime       @default(now()) @map("started_at")
+  completedAt  DateTime?      @map("completed_at")
+  slaDeadline  DateTime       @map("sla_deadline")
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Restrict)
+  actions  ApprovalAction[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, status, slaDeadline])
+  @@index([workflowId])
+  @@map("workflow_instance")
+}
+
+model ApprovalAction {
+  id                 String             @id @default(cuid())
+  workflowInstanceId String             @map("workflow_instance_id")
+  step               Int
+  action             ApprovalActionType
+  performedBy        String             @map("performed_by")
+  performedAt        DateTime           @default(now()) @map("performed_at")
+  comment            String?
+  evidenceS3         String?            @map("evidence_s3")
+
+  workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([workflowInstanceId])
+  @@index([workflowInstanceId, step])
+  @@index([performedBy, performedAt(sort: Desc)])
+  @@map("approval_action")
+}
+
+// =====================================================================
+// ASSURANCE
+// =====================================================================
+
+model AssuranceSnapshot {
+  id                String          @id @default(cuid())
+  tenantId          String          @map("tenant_id")
+  fy                String
+  framework         Framework
+  scope             Json
+  snapshotAt        DateTime        @default(now()) @map("snapshot_at")
+  auditorOrgName    String          @map("auditor_org_name")
+  auditorUserIds    String[]        @map("auditor_user_ids")
+  metricCount       Int             @map("metric_count")
+  evidenceCount     Int             @map("evidence_count")
+  hashAnchor        String          @map("hash_anchor")
+  parentSnapshotId  String?         @map("parent_snapshot_id")
+  status            AssuranceStatus @default(ACTIVE)
+  reportS3          String          @map("report_s3")
+  signedByUserId    String?         @map("signed_by_user_id")
+  signedAt          DateTime?       @map("signed_at")
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  exceptions AuditException[]
+
+  @@unique([tenantId, fy, framework, snapshotAt])
+  @@index([tenantId, fy, framework])
+  @@index([tenantId, status, snapshotAt(sort: Desc)])
+  @@index([parentSnapshotId])
+  @@map("assurance_snapshot")
+}
+
+model AuditException {
+  id                  String                 @id @default(cuid())
+  snapshotId          String                 @map("snapshot_id")
+  metricEventId       String?                @map("metric_event_id")
+  severity            AuditExceptionSeverity
+  description         String
+  managementResponse  String?                @map("management_response")
+  status              AuditExceptionStatus   @default(OPEN)
+  raisedBy            String                 @map("raised_by")
+  raisedAt            DateTime               @default(now()) @map("raised_at")
+  closedAt            DateTime?              @map("closed_at")
+
+  snapshot AssuranceSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+  @@index([snapshotId, status])
+  @@index([snapshotId, severity])
+  @@index([metricEventId])
+  @@map("audit_exception")
+}
+
+// =====================================================================
+// REPORTS
+// =====================================================================
+
+model Report {
+  id                   String       @id @default(cuid())
+  tenantId             String       @map("tenant_id")
+  fy                   String
+  framework            Framework
+  title                String
+  status               ReportStatus @default(DRAFT)
+  version              Int          @default(1)
+  parentReportId       String?      @map("parent_report_id")
+  reportData           Json         @map("report_data")
+  pdfS3                String?      @map("pdf_s3")
+  xlsxS3               String?      @map("xlsx_s3")
+  xbrlS3               String?      @map("xbrl_s3")
+  docxS3               String?      @map("docx_s3")
+  narrativeOverrides   Json         @default("{}") @map("narrative_overrides")
+  generatedBy          String       @map("generated_by")
+  generatedAt          DateTime     @default(now()) @map("generated_at")
+  approvedBy           String?      @map("approved_by")
+  filedWithAuthorityAt DateTime?    @map("filed_with_authority_at")
+  hashAnchor           String?      @map("hash_anchor")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, fy, framework, version])
+  @@index([tenantId, fy, framework, version(sort: Desc)])
+  @@index([tenantId, status, generatedAt(sort: Desc)])
+  @@index([parentReportId])
+  @@map("report")
+}
+
+// =====================================================================
+// SUPPLIERS
+// =====================================================================
+
+model Supplier {
+  id                   String         @id @default(cuid())
+  tenantId             String         @map("tenant_id")
+  name                 String
+  country              String
+  sector               String?
+  isicCode             String?        @map("isic_code")
+  spendInr             Decimal        @default(0) @map("spend_inr") @db.Decimal(38, 2)
+  primaryContactEmail  String         @map("primary_contact_email")
+  primaryContactName   String?        @map("primary_contact_name")
+  status               SupplierStatus @default(INVITED)
+  addedAt              DateTime       @default(now()) @map("added_at")
+  lastEngagedAt        DateTime?      @map("last_engaged_at")
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invites   SupplierInvite[]
+  responses SupplierResponse[]
+  scores    SupplierScore[]
+
+  @@unique([tenantId, primaryContactEmail])
+  @@index([tenantId, status])
+  @@index([tenantId, country])
+  @@index([tenantId, sector])
+  @@map("supplier")
+}
+
+model SupplierQuestionnaire {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  templateName String   @map("template_name")
+  sections     Json
+  createdBy    String   @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  version      Int      @default(1)
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invites   SupplierInvite[]
+  responses SupplierResponse[]
+
+  @@unique([tenantId, templateName, version])
+  @@index([tenantId])
+  @@map("supplier_questionnaire")
+}
+
+model SupplierInvite {
+  id              String   @id @default(cuid())
+  supplierId      String   @map("supplier_id")
+  questionnaireId String   @map("questionnaire_id")
+  magicTokenHash  String   @unique @map("magic_token_hash")
+  sentAt          DateTime @default(now()) @map("sent_at")
+  openedAt        DateTime? @map("opened_at")
+  respondedAt     DateTime? @map("responded_at")
+  expiresAt       DateTime @map("expires_at")
+
+  supplier      Supplier              @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  questionnaire SupplierQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Restrict)
+
+  @@index([supplierId])
+  @@index([supplierId, expiresAt])
+  @@index([questionnaireId])
+  @@index([expiresAt])
+  @@map("supplier_invite")
+}
+
+model SupplierResponse {
+  id              String                  @id @default(cuid())
+  supplierId      String                  @map("supplier_id")
+  questionnaireId String                  @map("questionnaire_id")
+  status          SupplierResponseStatus  @default(DRAFT)
+  responses       Json
+  evidenceDocIds  String[]                @map("evidence_doc_ids")
+  submittedAt     DateTime?               @map("submitted_at")
+  score           Float?
+
+  supplier      Supplier              @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  questionnaire SupplierQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Restrict)
+
+  @@index([supplierId])
+  @@index([supplierId, submittedAt(sort: Desc)])
+  @@index([questionnaireId])
+  @@index([status])
+  @@map("supplier_response")
+}
+
+model SupplierScore {
+  id                String   @id @default(cuid())
+  supplierId        String   @map("supplier_id")
+  fy                String
+  environmentScore  Float    @map("environment_score")
+  socialScore       Float    @map("social_score")
+  governanceScore   Float    @map("governance_score")
+  compositeScore    Float    @map("composite_score")
+  peerPercentile    Float    @map("peer_percentile")
+  computedAt        DateTime @default(now()) @map("computed_at")
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, fy])
+  @@map("supplier_score")
+}
+
+// =====================================================================
+// CARBON
+// =====================================================================
+
+model SbtiTarget {
+  id                  String     @id @default(cuid())
+  tenantId            String     @map("tenant_id")
+  scope               SbtiScope
+  baselineYear        Int        @map("baseline_year")
+  baselineValue       Decimal    @map("baseline_value") @db.Decimal(38, 12)
+  targetYear          Int        @map("target_year")
+  targetReductionPct  Float      @map("target_reduction_pct")
+  validatedBySBTi     Boolean    @default(false) @map("validated_by_sbti")
+  validatedAt         DateTime?  @map("validated_at")
+  status              SbtiStatus @default(DRAFT)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, scope, targetYear])
+  @@map("sbti_target")
+}
+
+model AbatementProject {
+  id                          String          @id @default(cuid())
+  tenantId                    String          @map("tenant_id")
+  scopeNodeIds                String[]        @map("scope_node_ids")
+  name                        String
+  description                 String?
+  capex                       Decimal         @db.Decimal(38, 2)
+  opex                        Decimal         @db.Decimal(38, 2)
+  expectedAnnualReductionTco2 Decimal         @map("expected_annual_reduction_tco2") @db.Decimal(38, 2)
+  expectedLifetimeYears       Int             @map("expected_lifetime_years")
+  marginalAbatementCost       Decimal         @map("marginal_abatement_cost") @db.Decimal(38, 2)
+  status                      AbatementStatus @default(PROPOSED)
+  startDate                   DateTime?       @map("start_date")
+  endDate                     DateTime?       @map("end_date")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, startDate, endDate])
+  @@map("abatement_project")
+}
+
+model CarbonCredit {
+  id               String         @id @default(cuid())
+  tenantId         String         @map("tenant_id")
+  registry         CreditRegistry
+  serialNumber     String         @map("serial_number")
+  vintage          Int
+  projectName      String         @map("project_name")
+  quantityTco2     Decimal        @map("quantity_tco2") @db.Decimal(38, 4)
+  pricePerTco2     Decimal        @map("price_per_tco2") @db.Decimal(38, 4)
+  retiredOn        DateTime?      @map("retired_on")
+  retirementReason String?        @map("retirement_reason")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([registry, serialNumber])
+  @@index([tenantId])
+  @@index([tenantId, vintage(sort: Desc)])
+  @@index([tenantId, retiredOn])
+  @@map("carbon_credit")
+}
+
+// =====================================================================
+// COPILOT
+// =====================================================================
+
+model CopilotConversation {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  userId        String   @map("user_id")
+  title         String
+  createdAt     DateTime @default(now()) @map("created_at")
+  lastMessageAt DateTime @default(now()) @map("last_message_at")
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  messages CopilotMessage[]
+
+  @@index([tenantId, userId, lastMessageAt(sort: Desc)])
+  @@index([tenantId, lastMessageAt(sort: Desc)])
+  @@map("copilot_conversation")
+}
+
+model CopilotMessage {
+  id             String              @id @default(cuid())
+  conversationId String              @map("conversation_id")
+  role           CopilotMessageRole
+  content        String
+  toolCalls      Json?               @map("tool_calls")
+  citations      Json?
+  tokensIn       Int?                @map("tokens_in")
+  tokensOut      Int?                @map("tokens_out")
+  modelUsed      String?             @map("model_used")
+  latencyMs      Int?                @map("latency_ms")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  conversation CopilotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([conversationId, role, createdAt])
+  @@map("copilot_message")
+}

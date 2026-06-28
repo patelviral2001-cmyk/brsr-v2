@@ -1,0 +1,333 @@
+# =============================================================================
+# BRSR AI Platform v2 — local development stack.
+#
+# This Compose file spins up the full data + identity + observability backbone
+# that the apps and services expect on a developer laptop:
+#
+#   - Postgres 16 (primary OLTP + Keycloak + Langfuse databases)
+#   - Redis 7 (cache, queues, rate limiting, idempotency)
+#   - Qdrant (vector store for RAG)
+#   - OpenSearch + Dashboards (full-text search, log exploration)
+#   - MinIO (S3-compatible object store; mc init seeds audit buckets)
+#   - Kafka (KRaft, single node) + Kafka-UI
+#   - Keycloak 25 (OIDC; backed by Postgres)
+#   - Langfuse (LLM observability; backed by Postgres)
+#   - Mailpit (catches outbound dev email — supplier portal magic links)
+#
+# In production these same components run as managed services:
+#   Postgres -> AWS RDS, Redis -> ElastiCache, Kafka -> MSK,
+#   OpenSearch -> AWS OpenSearch Service, MinIO -> S3,
+#   Keycloak -> managed cluster, Qdrant -> Qdrant Cloud,
+#   Langfuse -> Langfuse Cloud or self-hosted on EKS.
+#
+# Credentials in this file are intentionally weak (brsr/brsr, admin/admin,
+# minioadmin/minioadmin). DO NOT expose this stack on any network reachable
+# from outside your laptop. Bind only to localhost or run behind a VPN.
+# =============================================================================
+
+name: brsr-dev
+
+services:
+  # ---------------------------------------------------------------------------
+  # Postgres — primary OLTP + houses Keycloak and Langfuse schemas.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: brsr-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: brsr
+      POSTGRES_PASSWORD: brsr
+      POSTGRES_DB: brsr_dev
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - work_mem=16MB
+    volumes:
+      - brsr_pg_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brsr -d brsr_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - brsr_dev
+
+  # ---------------------------------------------------------------------------
+  # Redis — cache, BullMQ queues, rate limiting, idempotency keys.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: brsr-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    volumes:
+      - brsr_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - brsr_dev
+
+  # ---------------------------------------------------------------------------
+  # Qdrant — vector store for the RAG pipeline (taxonomy, disclosure templates,
+  # evidence embeddings).
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.10.0
+    container_name: brsr-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+    volumes:
+      - brsr_qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - brsr_dev
+
+  # ---------------------------------------------------------------------------
+  # OpenSearch — full-text search across disclosures + log/event store.
+  # Security plugin disabled for dev; in prod we run with TLS + role mapping.
+  # ---------------------------------------------------------------------------
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: brsr-opensearch
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    environment:
+      discovery.type: single-node
+      OPENSEARCH_JAVA_OPTS: "-Xms1g -Xmx1g"
+      DISABLE_SECURITY_PLUGIN: "true"
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "BrsrDev_Admin#2026"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - brsr_opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -E '\"status\":\"(green|yellow)\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks:
+      - brsr_dev
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.13.0
+    container_name: brsr-opensearch-dashboards
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks:
+      - brsr_dev
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-compatible object store. Buckets are bootstrapped by minio-init.
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    container_name: brsr-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - brsr_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - brsr_dev
+
+  # One-shot bucket bootstrap. brsr-evidence and brsr-reports get versioning ON
+  # because they are audit-grade — assurance providers require immutability of
+  # what was submitted, even if a user "deletes" or overwrites a file.
+  minio-init:
+    image: minio/mc:latest
+    container_name: brsr-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      until mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1; do
+        echo 'waiting for minio...'; sleep 1;
+      done;
+      for bucket in brsr-dev brsr-evidence brsr-reports brsr-extracts; do
+        mc mb --ignore-existing local/$$bucket;
+      done;
+      mc version enable local/brsr-evidence;
+      mc version enable local/brsr-reports;
+      echo 'minio bootstrap complete';
+      "
+    networks:
+      - brsr_dev
+
+  # ---------------------------------------------------------------------------
+  # Kafka — KRaft single-broker (no ZooKeeper).
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: brsr-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: brsr-dev-kafka-cluster
+    volumes:
+      - brsr_kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+    networks:
+      - brsr_dev
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: brsr-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: brsr-dev
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - brsr_dev
+
+  # ---------------------------------------------------------------------------
+  # Keycloak 25 — OIDC provider. Realm 'brsr' is imported from the mounted
+  # JSON on first boot.
+  # ---------------------------------------------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: brsr-keycloak
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: brsr
+      KC_DB_PASSWORD: brsr
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+    command: ["start-dev", "--import-realm"]
+    volumes:
+      - ./keycloak/realm:/opt/keycloak/data/import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - brsr_dev
+
+  # ---------------------------------------------------------------------------
+  # Langfuse — LLM tracing / evals / prompt management.
+  # ---------------------------------------------------------------------------
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: brsr-langfuse
+    restart: unless-stopped
+    ports:
+      - "3030:3000"
+    environment:
+      DATABASE_URL: postgresql://brsr:brsr@postgres:5432/langfuse
+      NEXTAUTH_SECRET: brsr-dev-langfuse-secret-change-me
+      SALT: brsr-dev-langfuse-salt-change-me
+      NEXTAUTH_URL: http://localhost:3030
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - brsr_dev
+
+  # ---------------------------------------------------------------------------
+  # Mailpit — captures all outbound dev email (e.g. supplier portal magic
+  # links, reset flows) so nothing leaks to real inboxes.
+  #   SMTP: localhost:1025  |  Web UI: http://localhost:8025
+  # ---------------------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: brsr-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - brsr_dev
+
+networks:
+  brsr_dev:
+    driver: bridge
+
+volumes:
+  brsr_pg_data:
+  brsr_redis_data:
+  brsr_qdrant_data:
+  brsr_opensearch_data:
+  brsr_minio_data:
+  brsr_kafka_data:

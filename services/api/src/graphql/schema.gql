@@ -1,0 +1,44 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type AnomalyRow {
+  canonicalKey: String!
+  id: String!
+  rank: Int!
+  reason: String!
+  scopeNodeId: String!
+  unit: String!
+  value: Float!
+  zScore: Float!
+}
+
+type DashboardKpi {
+  deltaPct: Float
+  key: String!
+  label: String!
+  unit: String
+  value: Float!
+}
+
+type EmissionsTrend {
+  months: [String!]!
+  scope1: [Float!]!
+  scope2: [Float!]!
+  scope3: [Float!]!
+}
+
+type FacilityComparisonRow {
+  emissionsIntensity: Float
+  emissionsTco2e: Float!
+  energyMwh: Float
+  name: String!
+  nodeId: String!
+}
+
+type Query {
+  dashboard(fy: String!, scope: String): [DashboardKpi!]!
+  emissionsTrend(fy: String!): EmissionsTrend!
+  facilityComparison(fy: String!): [FacilityComparisonRow!]!
+  topAnomalies(limit: Int! = 10): [AnomalyRow!]!
+}

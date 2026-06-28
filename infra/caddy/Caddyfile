@@ -1,0 +1,125 @@
+# =====================================================================
+# BRSR AI Platform v2 — Caddy reverse proxy
+#
+# {$DOMAIN} is substituted from the environment at container start.
+#  - If DOMAIN is a real hostname (e.g. brsr.example.com), Caddy will
+#    automatically obtain & renew a Let's Encrypt TLS certificate.
+#  - If DOMAIN is empty or a raw IP, Caddy falls back to HTTP on :80
+#    (see the :80 site block at the bottom).
+#
+# Upstreams (internal docker network):
+#   web        : Next.js   :3000
+#   api        : NestJS    :4000
+# =====================================================================
+
+{
+	# Global options
+	email   admin@{$DOMAIN}
+	# Uncomment for staging certs while testing DNS:
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+# ---------------------------------------------------------------------
+# Primary HTTPS site (auto-TLS when DOMAIN is a real hostname)
+# ---------------------------------------------------------------------
+{$DOMAIN} {
+	encode gzip zstd
+
+	# ---- Security headers -------------------------------------------
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "DENY"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+		Permissions-Policy        "camera=(), microphone=(), geolocation=()"
+		# Content-Security-Policy — restrictive baseline; Next.js needs
+		# 'unsafe-inline' for its runtime style-injection. The 'self' source
+		# covers the SPA bundle; OpenAI Copilot streaming is fetched through
+		# our own /api proxy so we don't need to whitelist openai.com.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://{$DOMAIN} wss://{$DOMAIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-site"
+		# Remove server fingerprint
+		-Server
+	}
+
+	# ---- Top-level /health alias → /v1/health on the API ---------------
+	# So health probes (and external monitoring) can hit a stable URL.
+	handle_path /health {
+		rewrite * /v1/health
+		reverse_proxy api:4000
+	}
+
+	# ---- API + GraphQL + public health ---------------------------------
+	@api {
+		path /api/v1/* /api/v1 /graphql /graphql/* /v1/health /v1/health/* /metrics-prom
+	}
+	handle @api {
+		reverse_proxy api:4000 {
+			header_up X-Real-IP        {remote_host}
+			header_up X-Forwarded-For  {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			# Long extraction calls
+			transport http {
+				read_timeout  300s
+				write_timeout 300s
+			}
+		}
+	}
+
+	# ---- NextAuth (must stay on Next.js, not the NestJS API) -------
+	@nextauth {
+		path /api/auth/*
+	}
+	handle @nextauth {
+		reverse_proxy web:3000
+	}
+
+	# ---- Internal callback path from ai-engine ---------------------
+	# (kept inside the cluster network — block from public.)
+	@internal {
+		path /internal/*
+	}
+	handle @internal {
+		respond "Not Found" 404
+	}
+
+	# ---- Everything else -> Next.js --------------------------------
+	handle {
+		reverse_proxy web:3000 {
+			header_up X-Real-IP         {remote_host}
+			header_up X-Forwarded-For   {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# ---- Access logs ------------------------------------------------
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size     100mb
+			roll_keep     5
+			roll_keep_for 720h
+		}
+		format json
+	}
+}
+
+# ---------------------------------------------------------------------
+# HTTP fallback for IP-only access (e.g. ip-1-2-3-4.srv.hstgr.io
+# before DNS is wired). Will simply redirect to HTTPS if DOMAIN was
+# resolvable; otherwise it serves the app over plain HTTP so the
+# operator can still reach the dashboard during initial setup.
+# ---------------------------------------------------------------------
+:80 {
+	@apiPlain path /api/v1/* /api/v1 /graphql /graphql/*
+	handle @apiPlain {
+		reverse_proxy api:4000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

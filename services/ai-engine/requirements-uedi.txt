@@ -1,0 +1,13 @@
+# Slim deps for the UEDI ai-engine (app.main_uedi) — no langchain/qdrant/boto3.
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+pydantic>=2.6
+pydantic-settings>=2.1
+python-multipart>=0.0.9
+httpx>=0.27
+pdfplumber>=0.10
+pymupdf>=1.23
+pillow>=10.0
+openai>=1.30
+google-cloud-documentai>=2.20
+google-cloud-vision>=3.4

@@ -1,0 +1,180 @@
+# Trimmed production stack for a single VPS — IP-only HTTP, UEDI extraction.
+# Drops the enterprise extras (Keycloak/Kong/Qdrant/OpenSearch/Kafka/Caddy).
+# Stack: postgres + redis + minio + ai-engine(UEDI) + api + web.
+#
+#   cp .env.deploy.example .env   # then fill in (esp. VPS_IP + rotated secrets)
+#   docker compose -f docker-compose.deploy.yml up -d --build
+#
+# Web is built with NEXT_PUBLIC_API_URL baked in (Next.js inlines it at build),
+# so set VPS_IP before `up --build`.
+
+networks:
+  brsr:
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: brsr
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: brsr
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brsr -d brsr"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [brsr]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [brsr]
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks: [brsr]
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 \"$$S3_ACCESS_KEY\" \"$$S3_SECRET_KEY\"; do sleep 2; done;
+      mc mb --ignore-existing local/brsr-evidence;
+      mc mb --ignore-existing local/brsr-reports;
+      mc mb --ignore-existing local/brsr-uploads;
+      mc mb --ignore-existing local/brsr-extracts;
+      echo 'buckets ready';
+      "
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    networks: [brsr]
+
+  ai-engine:
+    build:
+      context: ./services/ai-engine
+      dockerfile: Dockerfile.uedi
+    image: brsr/ai-engine-uedi:deploy
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: 8100
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      DOCAI_LOCATION: ${DOCAI_LOCATION:-us}
+      DOCAI_PROCESSOR_ID: ${DOCAI_PROCESSOR_ID}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/secrets/ocr-sa.json
+      BACKEND_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET}
+    volumes:
+      # place the (rotated) service-account JSON here on the VPS, not in git
+      - ./secrets/ocr-sa.json:/app/secrets/ocr-sa.json:ro
+    expose: ["8100"]
+    networks: [brsr]
+
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile.prod
+    image: brsr/api:deploy
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://brsr:${DB_PASSWORD}@postgres:5432/brsr?schema=public
+      REDIS_URL: redis://redis:6379
+      AI_ENGINE_URL: http://ai-engine:8100
+      INTERNAL_API_URL: http://api:4000
+      PUBLIC_BASE_URL: http://${VPS_IP}:4000
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: brsr-api
+      INTERNAL_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET}
+      BACKEND_CALLBACK_SECRET: ${INTERNAL_CALLBACK_SECRET}
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_FORCE_PATH_STYLE: "true"
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET: brsr-evidence
+      S3_BUCKET_EVIDENCE: brsr-evidence
+      S3_BUCKET_REPORTS: brsr-reports
+      S3_BUCKET_UPLOADS: brsr-uploads
+      S3_BUCKET_EXTRACTS: brsr-extracts
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CORS_ORIGIN: http://${VPS_IP}:3000
+      RUN_MIGRATIONS: "true"
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_REALM: brsr
+      KEYCLOAK_CLIENT_ID: brsr-api
+      COPILOT_URL: http://localhost:8101
+      OPA_URL: http://localhost:8181
+      OPA_ENABLED: "false"
+    ports:
+      - "4000:4000"
+    networks: [brsr]
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_URL: http://${VPS_IP}:4000/api/v1/v1
+        NEXT_PUBLIC_DEMO_MODE: "false"
+    image: brsr/web:deploy
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: http://${VPS_IP}:4000/api/v1/v1
+      NEXTAUTH_URL: http://${VPS_IP}:3000
+      AUTH_URL: http://${VPS_IP}:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      AUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXT_PUBLIC_DEMO_MODE: "false"
+      INTERNAL_API_URL: http://api:4000/api/v1/v1
+    ports:
+      - "3000:3000"
+    networks: [brsr]
